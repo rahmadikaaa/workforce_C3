@@ -1,0 +1,8 @@
+{
+  "name": "WORKFORCE — Personal Gemini Journal",
+  "description": "A secure AI-powered personal work journal that captures everyday work conversations and transforms them into structured, reusable knowledge—revealing what was learned, what is missing, and what can be improved.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
