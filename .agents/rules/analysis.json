@@ -1,0 +1,19 @@
+# Analysis Rules
+
+Analysis generation MUST follow all rules defined in:
+
+- 01-source-of-truth.md
+- 02-json-structure.md
+- 03-business.md
+- 04-sop.md
+- 05-inputs-dependencies.md
+- 06-technical.md
+- 07-outputs-security.md
+- 08-findings.md
+- 09-component-semantics.md
+- 10-pdf-rendering.md
+- 11-validation.md
+
+All rules are cumulative.
+
+Do not omit, replace, or reinterpret any rule unless explicitly instructed.

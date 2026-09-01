@@ -115,7 +115,7 @@ export default function JournalEntry() {
     await saveEntry(newMessages).catch(console.error);
 
     try {
-      const token = await user.getIdToken();
+      const token = await user.getIdToken(/* forceRefresh */ true);
       
       const apiMessages = newMessages.map(m => ({
         role: m.role,

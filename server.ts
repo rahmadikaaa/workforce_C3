@@ -2,12 +2,17 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
-import { initializeApp } from "firebase-admin/app";
+import { initializeApp, applicationDefault } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import cors from "cors";
 
 // Initialize Firebase Admin for token verification
-initializeApp();
+// credential: applicationDefault() uses ADC — works on Cloud Run (metadata server)
+// and locally when GOOGLE_APPLICATION_CREDENTIALS is set.
+initializeApp({
+  projectId: "teak-proton-470603-c0",
+  credential: applicationDefault(),
+});
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 

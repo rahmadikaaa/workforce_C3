@@ -9,6 +9,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import Landing from "./components/Landing";
 import Dashboard from "./components/Dashboard";
 import JournalEntry from "./components/JournalEntry";
+import AnalysisWorkspace from "./components/AnalysisWorkspace";
 
 export default function App() {
   return (
@@ -29,6 +30,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <JournalEntry />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/analyze" 
+            element={
+              <ProtectedRoute>
+                <AnalysisWorkspace />
               </ProtectedRoute>
             } 
           />

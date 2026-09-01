@@ -46,8 +46,8 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#0a0a0a] flex flex-col md:flex-row text-zinc-300 font-sans">
       <aside className="w-full md:w-[280px] bg-[#0d0d0d] border-r border-zinc-800 p-8 flex flex-col shrink-0 h-auto md:h-screen">
         <div className="flex flex-col h-full">
-          <h1 className="text-2xl font-serif italic text-white tracking-tighter mb-8" style={{ fontFamily: "Georgia, serif" }}>Aura</h1>
-          
+          <h1 className="text-2xl font-serif italic text-white tracking-tighter mb-8" style={{ fontFamily: "Georgia, serif" }}>WORKFORCE</h1>
+
           <Link
             to="/entry/new"
             className="w-full py-3 px-4 border border-zinc-800 rounded-xl text-xs font-semibold tracking-widest text-zinc-400 uppercase hover:bg-zinc-800 transition-colors mb-10 text-center flex items-center justify-center gap-2"
@@ -80,7 +80,7 @@ export default function Dashboard() {
 
       <main className="flex-1 flex flex-col bg-[#0a0a0a] relative p-6 md:p-10 overflow-y-auto">
         <h1 className="text-2xl font-serif italic text-white mb-8" style={{ fontFamily: "Georgia, serif" }}>Your History</h1>
-        
+
         {loading ? (
           <div className="animate-pulse space-y-4">
             {[1, 2, 3].map(i => (
