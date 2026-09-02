@@ -138,11 +138,37 @@ export interface AdaptedPdfDocument extends WorkforceAnalysisJson {
   };
 }
 
+
+/**
+ * Recursively replaces all `null` values with `undefined` in the object tree.
+ *
+ * Why: @react-pdf/renderer does NOT tolerate `null` as JSX children.
+ * When Gemini returns `null` for a field (e.g. `"scheduler": null`), the
+ * pattern `field && <Component/>` evaluates to `null` (not `false`),
+ * which causes: "Cannot read properties of null (reading 'props')".
+ * Replacing `null` → `undefined` makes short-circuit return `undefined`,
+ * which react-pdf safely ignores.
+ */
+function deepNullToUndefined<T>(value: T): T {
+  if (value === null) return undefined as unknown as T;
+  if (Array.isArray(value)) return value.map(deepNullToUndefined) as unknown as T;
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, deepNullToUndefined(v)])
+    ) as T;
+  }
+  return value;
+}
+
 /**
  * Adapts WORKFORCE analysisJson to the shape expected by ExportTemplatePDF.
  */
 export function adaptWorkforceToPdf(analysis: WorkforceAnalysisJson): AdaptedPdfDocument {
-  const metaObj = analysis?.metadata || {};
+  // Sanitize nulls first — Gemini may return null for any optional field,
+  // and null children crash @react-pdf/renderer.
+  const safe = deepNullToUndefined(analysis);
+
+  const metaObj = safe?.metadata || {};
   const appName = metaObj.app_name?.trim() || "Automation System";
   const activityName = metaObj.activity_name?.trim() || "Operational Flow";
   const rawTimestamp = metaObj.analysis_timestamp || new Date().toISOString();
@@ -154,13 +180,13 @@ export function adaptWorkforceToPdf(analysis: WorkforceAnalysisJson): AdaptedPdf
 
   // Reconcile configuration_files and environment_variables between inputs & dependencies
   const configFiles = [
-    ...(Array.isArray(analysis.inputs?.configuration_files) ? analysis.inputs.configuration_files : []),
-    ...(Array.isArray(analysis.dependencies?.configuration_files) ? analysis.dependencies.configuration_files : []),
+    ...(Array.isArray(safe.inputs?.configuration_files) ? safe.inputs.configuration_files : []),
+    ...(Array.isArray(safe.dependencies?.configuration_files) ? safe.dependencies.configuration_files : []),
   ].filter((item, index, self) => Boolean(item) && self.indexOf(item) === index);
 
   const envVars = [
-    ...(Array.isArray(analysis.inputs?.environment_variables) ? analysis.inputs.environment_variables : []),
-    ...(Array.isArray(analysis.dependencies?.environment_variables) ? analysis.dependencies.environment_variables : []),
+    ...(Array.isArray(safe.inputs?.environment_variables) ? safe.inputs.environment_variables : []),
+    ...(Array.isArray(safe.dependencies?.environment_variables) ? safe.dependencies.environment_variables : []),
   ].filter((item, index, self) => Boolean(item) && self.indexOf(item) === index);
 
   const sanitizedMeta = {
@@ -200,14 +226,14 @@ export function adaptWorkforceToPdf(analysis: WorkforceAnalysisJson): AdaptedPdf
   };
 
   return {
-    ...analysis,
+    ...safe,
     meta: sanitizedMeta,
     inputs: {
-      ...(analysis.inputs || {}),
-      documents: analysis.inputs?.documents || [],
+      ...(safe.inputs || {}),
+      documents: safe.inputs?.documents || [],
       configuration_files: configFiles,
       environment_variables: envVars,
-      runtime_parameters: analysis.inputs?.runtime_parameters || [],
+      runtime_parameters: safe.inputs?.runtime_parameters || [],
     },
   };
 }

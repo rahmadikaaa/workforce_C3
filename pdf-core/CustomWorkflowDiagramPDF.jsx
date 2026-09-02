@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
 });
 
 export default function CustomWorkflowDiagramPDF({ steps }) {
-  if (!steps || !Array.isArray(steps) || steps.length === 0) return null;
+  if (!steps || !Array.isArray(steps) || steps.length === 0) return <View />;
 
   return (
     <View style={styles.container}>
@@ -52,7 +52,9 @@ export default function CustomWorkflowDiagramPDF({ steps }) {
         <React.Fragment key={index}>
           <View style={styles.nodeWrapper} wrap={false}>
             <View style={styles.nodeBox}>
-              <Text style={styles.nodeText}>{step.name}</Text>
+              <Text style={styles.nodeText}>
+                {typeof step === 'string' ? step : (step?.name || step?.title || step?.step_name || `Step ${index + 1}`)}
+              </Text>
             </View>
           </View>
 

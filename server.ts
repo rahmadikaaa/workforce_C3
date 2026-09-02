@@ -5,6 +5,12 @@ import { GoogleGenAI } from "@google/genai";
 import { initializeApp, applicationDefault } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import cors from "cors";
+import multer from "multer";
+import * as _pdfParse from "pdf-parse";
+// pdf-parse@1 uses `export =` (CJS). Under moduleResolution:bundler the
+// runtime default is on .default when transpiled by tsx/esbuild.
+const pdfParse = (_pdfParse as unknown as { default: typeof _pdfParse }).default ?? _pdfParse;
+import mammoth from "mammoth";
 
 // Initialize Firebase Admin for token verification
 // credential: applicationDefault() uses ADC — works on Cloud Run (metadata server)
@@ -20,7 +26,8 @@ const app = express();
 const PORT = 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Auth verification middleware
 const verifyAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -52,10 +59,9 @@ app.post("/api/chat", verifyAuth, async (req, res) => {
   }
 
   const models = [
-    "gemini-3.6-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest",
-    "gemini-3.7-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash-lite",
   ];
 
   for (const model of models) {
@@ -72,7 +78,7 @@ app.post("/api/chat", verifyAuth, async (req, res) => {
       return;
     } catch (error: any) {
       const status = error.status || error.response?.status;
-      if (status === 503 || status === 429 || status === 404 || status === 500) {
+      if (status === 503 || status === 429 || status === 404 || status === 400) {
         console.warn(`Model ${model} failed with status ${status}, trying next...`);
         continue;
       }
@@ -83,6 +89,74 @@ app.post("/api/chat", verifyAuth, async (req, res) => {
   }
 
   res.status(500).json({ error: "All models failed" });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SOP Extraction Endpoint
+// Accepts a PDF or DOCX file upload (multipart/form-data) and returns the
+// extracted plain text. Files are kept in memory only — never persisted.
+// ──────────────────────────────────────────────────────────────────────────────
+
+const sopUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB hard cap
+});
+
+const EXTRACT_ALLOWED_MIMES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+
+const EXTRACT_ALLOWED_EXTS = new Set([".pdf", ".docx"]);
+
+app.post("/api/extract-sop", verifyAuth, sopUpload.single("file"), async (req, res) => {
+  const file = req.file;
+
+  if (!file) {
+    res.status(400).json({ error: "No file received." });
+    return;
+  }
+
+  // Validate extension
+  const ext = "." + (file.originalname.split(".").pop() ?? "").toLowerCase();
+  if (!EXTRACT_ALLOWED_EXTS.has(ext)) {
+    res.status(400).json({ error: "Unsupported file type. Only PDF and DOCX are accepted." });
+    return;
+  }
+
+  // Validate MIME (double-check against extension)
+  if (!EXTRACT_ALLOWED_MIMES.has(file.mimetype)) {
+    res.status(400).json({ error: "File MIME type does not match expected format." });
+    return;
+  }
+
+  try {
+    let extractedText: string;
+
+    if (ext === ".pdf") {
+      const result = await pdfParse(file.buffer);
+      extractedText = result.text;
+    } else {
+      // .docx
+      const result = await mammoth.extractRawText({ buffer: file.buffer });
+      extractedText = result.value;
+    }
+
+    if (!extractedText.trim()) {
+      res.status(422).json({
+        error: "The file was processed but no readable text was found. The document may be image-only or password-protected. Please paste the SOP content manually.",
+      });
+      return;
+    }
+
+    res.json({ text: extractedText });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("SOP extraction failed:", msg);
+    res.status(500).json({
+      error: "Text extraction failed. The file may be corrupted or password-protected. Please paste the SOP content manually.",
+    });
+  }
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -242,10 +316,9 @@ app.post("/api/analyze", verifyAuth, async (req, res) => {
 
   // ── 3. Call Gemini with model fallback ─────────────────────────────────────
   const models = [
-    "gemini-3.6-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest",
-    "gemini-3.7-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash-lite",
   ];
 
   for (const model of models) {
@@ -295,7 +368,7 @@ app.post("/api/analyze", verifyAuth, async (req, res) => {
 
     } catch (error: any) {
       const status = error.status || error.response?.status;
-      if (status === 503 || status === 429 || status === 404 || status === 500) {
+      if (status === 503 || status === 429 || status === 404 || status === 400) {
         console.warn(`Analysis: model ${model} failed with status ${status}, trying next...`);
         continue;
       }

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { auth } from "../lib/firebase";
 import { useNavigate } from "react-router-dom";
 import {
@@ -249,10 +249,10 @@ interface AcceptSpec {
 
 const ACCEPT_SPECS: Record<ArtifactKind, AcceptSpec> = {
   sop: {
-    label: "PDF / DOCX",
+    label: "PDF / DOCX / TXT / MD",
     mimeTypes:
-      "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    extensions: [".pdf", ".docx"],
+      "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown",
+    extensions: [".pdf", ".docx", ".txt", ".md"],
   },
   bash: {
     label: ".sh / .bash",
@@ -390,7 +390,12 @@ function SourceArtifactField({
   onPaste,
   required,
 }: SourceArtifactFieldProps) {
-  const [showPaste, setShowPaste] = useState(false);
+  // Auto-reveal textarea when pasteText is populated externally (e.g. after extraction)
+  const [showPaste, setShowPaste] = useState(() => pasteText.trim() !== "");
+  useEffect(() => {
+    if (pasteText.trim() !== "") setShowPaste(true);
+  }, [pasteText]);
+
   const spec = ACCEPT_SPECS[kind];
   const fallbackLabel = spec.label.split(" / ")[0];
 
@@ -464,6 +469,11 @@ export default function AnalysisWorkspace() {
   const [bashFile, setBashFile] = useState<File | null>(null);
   const [bashPasteText, setBashPasteText] = useState("");
 
+  // SOP extraction state — tracks async server-side extraction for PDF/DOCX
+  const [sopExtractState, setSopExtractState] = useState<
+    "idle" | "extracting" | { error: string }
+  >("idle");
+
   // ── UI state ────────────────────────────────────────────────────────────────
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -477,6 +487,71 @@ export default function AnalysisWorkspace() {
 
   const updateContext = (field: keyof ActivityContext) => (value: string) => {
     setActivityContext((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // ── handleSopFile ──────────────────────────────────────────────────────────
+  // Called by SourceArtifactField when the user picks a SOP file.
+  // - .txt / .md  → read client-side via File.text(), no server round-trip.
+  // - .pdf / .docx → POST to /api/extract-sop, populate sopPasteText with result.
+  // Analysis is NOT triggered automatically.
+  const handleSopFile = async (f: File | null) => {
+    setSopFile(f);
+    setSopExtractState("idle");
+
+    if (!f) {
+      // User cleared the file
+      return;
+    }
+
+    const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
+
+    if (ext === ".txt" || ext === ".md") {
+      // Client-side text read — no network call needed
+      try {
+        const text = await f.text();
+        setSopPasteText(text);
+      } catch {
+        setSopExtractState({ error: "Could not read the file. Please paste the SOP content manually." });
+      }
+      return;
+    }
+
+    // PDF or DOCX — server-side extraction
+    setSopExtractState("extracting");
+
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        setSopExtractState({ error: "You must be signed in to extract SOP content." });
+        return;
+      }
+      const idToken = await currentUser.getIdToken();
+
+      const formData = new FormData();
+      formData.append("file", f);
+
+      const response = await fetch("/api/extract-sop", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: formData,
+      });
+
+      const data = await response.json() as { text?: string; error?: string };
+
+      if (!response.ok || !data.text) {
+        setSopExtractState({
+          error: data.error ?? "Extraction failed. Please paste the SOP content manually.",
+        });
+        return;
+      }
+
+      setSopPasteText(data.text);
+      setSopExtractState("idle");
+    } catch {
+      setSopExtractState({
+        error: "A network error occurred during extraction. Please paste the SOP content manually.",
+      });
+    }
   };
 
   const canSubmit =
@@ -504,26 +579,21 @@ export default function AnalysisWorkspace() {
         return;
       }
 
-      // ── 2. Resolve sopContent (paste only — PDF/DOCX extraction not available) ──
-      // PDF/DOCX files are accepted in the upload zone UI but cannot be parsed
-      // client-side without a dedicated library. Only text paste is supported.
-      // If a PDF/DOCX file is selected but no paste text exists, surface a clear error.
+      // ── 2. Resolve sopContent ─────────────────────────────────────────────
+      // For PDF/DOCX: handleSopFile already extracted text into sopPasteText.
+      // For txt/md:   handleSopFile already read text into sopPasteText.
+      // For any file type that slipped through without extraction, fall back
+      // to file.text() as a last resort (plain-text readable files only).
       let sopContent = sopPasteText;
-      if (sopFile) {
-        const ext = "." + (sopFile.name.split(".").pop() ?? "").toLowerCase();
-        if (ext === ".pdf" || ext === ".docx") {
-          // BLOCKER: No PDF/DOCX extraction dependency in this project.
-          // User must use the paste fallback for SOP text content.
-          setAnalysisError(
-            "PDF and DOCX files cannot be extracted automatically. Please paste the SOP content using the text input below the upload zone."
-          );
-          return;
+      if (!sopContent.trim() && sopFile) {
+        try {
+          sopContent = await sopFile.text();
+        } catch {
+          // ignore — empty sopContent will surface the error below
         }
-        // .sh / .bash uploaded to SOP zone (edge case — treat as plain text)
-        sopContent = await sopFile.text();
       }
       if (!sopContent.trim()) {
-        setAnalysisError("SOP content is empty. Please paste SOP content using the text input.");
+        setAnalysisError("SOP content is empty. Please upload a SOP file or paste content using the text input.");
         return;
       }
 
@@ -554,6 +624,8 @@ export default function AnalysisWorkspace() {
         setAnalysisError(
           response.status === 401
             ? "Authentication failed. Please sign in and try again."
+            : response.status === 413
+            ? "The request payload is too large. Please reduce the size of the SOP or script content."
             : "Analysis could not be completed. Please try again."
         );
         return;
@@ -582,7 +654,40 @@ export default function AnalysisWorkspace() {
       setPdfError(null);
       const adaptedDoc = adaptWorkforceToPdf(analysisResult as unknown as WorkforceAnalysisJson);
       const element = React.createElement(ExportTemplatePDF, { doc: adaptedDoc });
-      const blob = await pdf(element).toBlob();
+
+      // React 19 Reconciler compatibility:
+      // In React 19, container reconciliation is concurrent/asynchronous.
+      // Calling toBlob() immediately before container.document mounts causes:
+      // "TypeError: Cannot read properties of null (reading 'props')"
+      const instance = pdf();
+      await new Promise<void>((resolve) => {
+        let isDone = false;
+        const checkDone = () => {
+          if (!isDone && (instance as any).container?.document) {
+            isDone = true;
+            resolve();
+          }
+        };
+
+        (instance as any).on?.("change", checkDone);
+        (instance as any).updateContainer(element, checkDone);
+
+        // Polling fallback to catch when reconciler commits
+        const interval = setInterval(() => {
+          if ((instance as any).container?.document) {
+            clearInterval(interval);
+            checkDone();
+          }
+        }, 25);
+
+        // Safety timeout
+        setTimeout(() => {
+          clearInterval(interval);
+          resolve();
+        }, 5000);
+      });
+
+      const blob = await instance.toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       const rawMeta = (analysisResult as Record<string, unknown>)?.metadata as Record<string, unknown> | undefined;
@@ -594,9 +699,11 @@ export default function AnalysisWorkspace() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch (err) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error("PDF generation failed:", err);
-      setPdfError("Failed to generate PDF. Please try again.");
+      console.error("PDF error detail:", msg);
+      setPdfError(`PDF Error: ${msg.slice(0, 120)}`);
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -699,10 +806,32 @@ export default function AnalysisWorkspace() {
                   kind="sop"
                   file={sopFile}
                   pasteText={sopPasteText}
-                  onFile={setSopFile}
+                  onFile={handleSopFile}
                   onPaste={setSopPasteText}
                   required
                 />
+
+                {/* SOP extraction status — shown only for PDF/DOCX uploads */}
+                {sopExtractState === "extracting" && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="flex items-center gap-2 text-xs text-zinc-400"
+                  >
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden="true" />
+                    <span>Extracting SOP text from file…</span>
+                  </div>
+                )}
+                {typeof sopExtractState === "object" && "error" in sopExtractState && (
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    className="flex items-start gap-2 text-xs text-amber-400"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 mt-0.5" aria-hidden="true" />
+                    <span>{sopExtractState.error}</span>
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-zinc-800/60" />

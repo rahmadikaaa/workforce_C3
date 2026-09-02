@@ -207,16 +207,78 @@ const SubmenuTitle = ({ children, id, pageMapObj, minPresenceAhead = 100 }) => (
 );
 
 const cleanTextForPdf = (text) => {
-  if (typeof text !== 'string') return text;
-  return text.replace(/\u2192/g, '->')
+  if (text == null) return "";
+  const str = typeof text === 'string' ? text : String(text);
+  return str.replace(/\u2192/g, '->')
              .replace(/\u2013/g, '-')
              .replace(/\u2014/g, '--')
              .replace(/[\u2018\u2019]/g, "'")
              .replace(/[\u201C\u201D]/g, '"');
 };
 
+/**
+ * Reusable normalization helper for list-like analysis fields.
+ * Safely converts arrays, strings, objects, or null/undefined into a predictable array.
+ *
+ * - array -> use as-is (filtering null/undefined)
+ * - non-empty string -> split by newlines (or wrap single line) into a safe list
+ * - null/undefined -> []
+ * - unexpected object -> extract array property, numeric-keyed values, or wrap safely
+ */
+export const normalizeList = (val) => {
+  if (val == null) return [];
+  if (Array.isArray(val)) {
+    return val.filter(item => item !== null && item !== undefined);
+  }
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (!trimmed) return [];
+    if (trimmed.includes("\n")) {
+      const lines = trimmed.split(/\r?\n+/).map(l => l.trim()).filter(Boolean);
+      return lines.length > 0 ? lines : [trimmed];
+    }
+    return [trimmed];
+  }
+  if (typeof val === "object") {
+    for (const key of ["items", "steps", "workflow", "list", "values", "data"]) {
+      if (Array.isArray(val[key])) {
+        return normalizeList(val[key]);
+      }
+    }
+    const keys = Object.keys(val);
+    if (keys.length === 0) return [];
+    if (keys.every(k => !isNaN(Number(k)))) {
+      return Object.values(val).filter(item => item !== null && item !== undefined);
+    }
+    return [val];
+  }
+  return [];
+};
+
+/**
+ * Normalizes workflow steps so that every step is an object with step, name, and description.
+ */
+export const normalizeWorkflow = (workflowVal) => {
+  const list = normalizeList(workflowVal);
+  return list.map((w, i) => {
+    if (w && typeof w === "object" && !Array.isArray(w)) {
+      const step = w.step != null ? String(w.step) : String(i + 1);
+      const name = w.name || w.step_name || w.title || w.action || (typeof w.description === "string" && w.description ? w.description : `Step ${i + 1}`);
+      const description = (w.description && w.description !== name) ? String(w.description) : (w.detail || w.notes || "");
+      return { ...w, step, name, description };
+    }
+    const str = typeof w === "string" ? w.trim() : (w != null ? String(w) : `Step ${i + 1}`);
+    return {
+      step: String(i + 1),
+      name: str || `Step ${i + 1}`,
+      description: "",
+    };
+  });
+};
+
 const BulletList = ({ items, mono = false }) => {
-  const arr = Array.isArray(items) ? items : (items ? [items] : []);
+  const arr = normalizeList(items);
+  if (arr.length === 0) return null;
   return (
     <View>
       {arr.map((item, i) => (
@@ -227,7 +289,9 @@ const BulletList = ({ items, mono = false }) => {
               ? cleanTextForPdf(item) 
               : (item?.improvement_name 
                   ? <Text><Text style={{ fontFamily: "Helvetica-Bold" }}>{cleanTextForPdf(item.improvement_name)}: </Text>{cleanTextForPdf(item.description)}</Text> 
-                  : cleanTextForPdf(JSON.stringify(item)))}
+                  : (item?.name && item?.description
+                      ? <Text><Text style={{ fontFamily: "Helvetica-Bold" }}>{cleanTextForPdf(item.name)}: </Text>{cleanTextForPdf(item.description)}</Text>
+                      : cleanTextForPdf(typeof item === 'object' ? (item?.name || item?.description || JSON.stringify(item)) : String(item))))}
           </Text>
         </View>
       ))}
@@ -236,6 +300,7 @@ const BulletList = ({ items, mono = false }) => {
 };
 
 const PDFTable = ({ headers, rows, colWidths }) => {
+  const safeRows = Array.isArray(rows) ? rows : [];
   return (
     <View style={s.table}>
       {/* Header Row with fixed prop to repeat across pages */}
@@ -248,25 +313,30 @@ const PDFTable = ({ headers, rows, colWidths }) => {
         ))}
       </View>
       {/* Data Rows */}
-      {rows.map((row, ri) => (
-        <View key={`tr-${ri}`} style={[
-          s.tableRow,
-          ri === rows.length - 1 ? { borderBottomWidth: 0.5, borderColor: '#9ca3af' } : {}
-        ]} wrap={false}>
-          {row.map((cell, ci) => (
-            <View key={`td-${ci}`} style={[
-              ci < row.length - 1 ? s.tableCell : s.tableCellLast,
-              { width: colWidths[ci] }
-            ]}>
-              {typeof cell === "string" || typeof cell === "number" || cell == null ? (
-                <Text>{cell ?? "—"}</Text>
-              ) : (
-                cell
-              )}
-            </View>
-          ))}
-        </View>
-      ))}
+      {safeRows.map((row, ri) => {
+        const safeCells = Array.isArray(row) ? row : [row];
+        return (
+          <View key={`tr-${ri}`} style={[
+            s.tableRow,
+            ri === safeRows.length - 1 ? { borderBottomWidth: 0.5, borderColor: '#9ca3af' } : {}
+          ]} wrap={false}>
+            {safeCells.map((cell, ci) => (
+              <View key={`td-${ci}`} style={[
+                ci < safeCells.length - 1 ? s.tableCell : s.tableCellLast,
+                { width: colWidths[ci] }
+              ]}>
+                {cell && typeof cell === 'object' && cell.$$typeof ? (
+                  cell
+                ) : typeof cell === "string" || typeof cell === "number" ? (
+                  <Text>{cleanTextForPdf(String(cell))}</Text>
+                ) : (
+                  <Text>{cell != null ? cleanTextForPdf(typeof cell === "object" ? (cell.name || cell.value || cell.description || JSON.stringify(cell)) : String(cell)) : "—"}</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        );
+      })}
     </View>
   );
 };
@@ -275,11 +345,53 @@ const PDFTable = ({ headers, rows, colWidths }) => {
 // MAIN DOCUMENT COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
-  const documentHistory = doc.metadata?.document_history || doc.meta?.history || [];
-  const nums = getSectionNumbers(doc);
+const ExportTemplatePDF = ({ doc = {}, pageMap = {}, diagramImage }) => {
+  const workflowSteps = normalizeWorkflow(doc?.technical?.workflow);
+  const calculations = normalizeList(doc?.technical?.calculations);
+  const errorHandling = normalizeList(doc?.technical?.error_handling);
+  const generatedFiles = normalizeList(doc?.outputs?.generated_files);
+  const notifications = normalizeList(doc?.outputs?.notifications);
+  const reports = normalizeList(doc?.outputs?.reports);
+  const credentials = normalizeList(doc?.security?.credentials);
+  const sensitiveData = normalizeList(doc?.security?.sensitive_data);
+  const securityConsiderations = normalizeList(doc?.security?.security_considerations);
+  const knowledgeGaps = normalizeList(doc?.knowledge_gaps);
+  const recommendations = normalizeList(doc?.recommendations);
 
-  const runtimeParams = Array.isArray(doc.inputs?.runtime_parameters) ? doc.inputs.runtime_parameters : [];
+  const sopSteps = normalizeList(doc?.business?.sop_steps).map((r, i) => {
+    if (r && typeof r === 'object' && !Array.isArray(r)) {
+      return {
+        step: r.step != null ? String(r.step) : String(i + 1),
+        name: r.name || r.step_name || r.title || (typeof r.description === 'string' ? r.description : `Step ${i + 1}`),
+        implemented: r.implemented === true || r.implemented === "Yes" || r.implemented === "yes",
+        notes: r.notes || r.description || "",
+      };
+    }
+    const str = typeof r === 'string' ? r : String(r);
+    return {
+      step: String(i + 1),
+      name: str || `Step ${i + 1}`,
+      implemented: true,
+      notes: "",
+    };
+  });
+  const businessProcess = normalizeList(doc?.business?.business_process);
+  const businessRules = normalizeList(doc?.business?.business_rules);
+  const assumptions = normalizeList(doc?.business?.assumptions);
+  const limitations = normalizeList(doc?.business?.limitations);
+
+  const documents = normalizeList(doc?.inputs?.documents);
+  const configFiles = normalizeList(doc?.inputs?.configuration_files);
+  const envVars = normalizeList(doc?.inputs?.environment_variables);
+  const languages = normalizeList(doc?.dependencies?.languages);
+  const tools = normalizeList(doc?.dependencies?.tools);
+  const externalSystems = normalizeList(doc?.dependencies?.external_systems);
+  const apis = normalizeList(doc?.dependencies?.apis);
+  const evidenceTesting = normalizeList(doc?.evidence_testing);
+
+  const documentHistory = normalizeList(doc?.metadata?.document_history || doc?.meta?.history);
+
+  const runtimeParams = normalizeList(doc?.inputs?.runtime_parameters);
   const hasRuntimeParams = runtimeParams.length > 0;
   const isRuntimeParamsTable = hasRuntimeParams && runtimeParams.some(f => {
     if (typeof f === 'object' && f !== null) return true;
@@ -289,6 +401,57 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
     return false;
   });
 
+  const normalizedDoc = {
+    ...doc,
+    metadata: {
+      ...doc?.metadata,
+      document_history: documentHistory,
+    },
+    business: {
+      ...doc?.business,
+      sop_steps: sopSteps,
+      business_process: businessProcess,
+      business_rules: businessRules,
+      assumptions,
+      limitations,
+    },
+    inputs: {
+      ...doc?.inputs,
+      documents,
+      configuration_files: configFiles,
+      environment_variables: envVars,
+      runtime_parameters: runtimeParams,
+    },
+    dependencies: {
+      ...doc?.dependencies,
+      languages,
+      tools,
+      external_systems: externalSystems,
+      apis,
+    },
+    technical: {
+      ...doc?.technical,
+      workflow: workflowSteps,
+      calculations,
+      error_handling: errorHandling,
+    },
+    outputs: {
+      ...doc?.outputs,
+      generated_files: generatedFiles,
+      notifications,
+      reports,
+    },
+    security: {
+      ...doc?.security,
+      credentials,
+      sensitive_data: sensitiveData,
+      security_considerations: securityConsiderations,
+    },
+    knowledge_gaps: knowledgeGaps,
+    recommendations,
+  };
+  const nums = getSectionNumbers(normalizedDoc);
+
   // Build TOC items
   const tocItems = [
     { title: "Information Confidentiality", id: "confidentiality", indent: 0, show: true },
@@ -296,26 +459,26 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
     { title: "Contact", id: "contact", indent: 0, show: true },
     { title: "Contents", id: "toc", indent: 0, show: true },
     { title: "Document Approval", id: "approval", indent: 0, show: true },
-    { title: "Document History", id: "history", indent: 0, show: doc?.metadata?.document_history?.length > 0 || doc?.meta?.history?.length > 0 },
+    { title: "Document History", id: "history", indent: 0, show: documentHistory.length > 0 },
     
     { title: "1. BUSINESS CONTEXT", id: "ch1-title", indent: 0, isHeader: true, show: true },
     { title: `${nums.purpose} Purpose`, id: "ch1-purpose", indent: 1, show: !!doc?.business?.purpose },
     { title: `${nums.scope} Scope`, id: "ch1-scope", indent: 1, show: !!doc?.business?.scope },
-    { title: `${nums.sop_mapping} SOP Steps`, id: "ch1-sop", indent: 1, show: doc?.business?.sop_steps?.length > 0 },
-    { title: `${nums.process} Business Process`, id: "ch1-process", indent: 1, show: doc?.business?.business_process?.length > 0 },
-    { title: `${nums.rules} Business Rules`, id: "ch1-rules", indent: 1, show: doc?.business?.business_rules?.length > 0 },
-    { title: `${nums.assumptions} Assumptions`, id: "ch1-assumptions", indent: 1, show: doc?.business?.assumptions?.length > 0 },
-    { title: `${nums.limitations} Limitations`, id: "ch1-limitations", indent: 1, show: doc?.business?.limitations?.length > 0 },
+    { title: `${nums.sop_mapping} SOP Steps`, id: "ch1-sop", indent: 1, show: sopSteps.length > 0 },
+    { title: `${nums.process} Business Process`, id: "ch1-process", indent: 1, show: businessProcess.length > 0 },
+    { title: `${nums.rules} Business Rules`, id: "ch1-rules", indent: 1, show: businessRules.length > 0 },
+    { title: `${nums.assumptions} Assumptions`, id: "ch1-assumptions", indent: 1, show: assumptions.length > 0 },
+    { title: `${nums.limitations} Limitations`, id: "ch1-limitations", indent: 1, show: limitations.length > 0 },
     
     { title: "2. INPUTS & DEPENDENCIES", id: "ch2-title", indent: 0, isHeader: true, show: true },
-    { title: `${nums.documents} Documents`, id: "ch2-docs", indent: 1, show: doc?.inputs?.documents?.length > 0 },
-    { title: `${nums.cfg} Configuration Files`, id: "ch2-cfg", indent: 1, show: doc?.inputs?.configuration_files?.length > 0 },
-    { title: `${nums.env} Environment Variables`, id: "ch2-env", indent: 1, show: doc?.inputs?.environment_variables?.length > 0 },
-    { title: `${nums.params} Runtime Parameters`, id: "ch2-params", indent: 1, show: doc?.inputs?.runtime_parameters?.length > 0 },
-    { title: `${nums.lang} Languages`, id: "ch2-lang", indent: 1, show: doc?.dependencies?.languages?.length > 0 },
-    { title: `${nums.tools} Tools`, id: "ch2-tools", indent: 1, show: doc?.dependencies?.tools?.length > 0 },
-    { title: `${nums.ext} External Systems`, id: "ch2-ext", indent: 1, show: doc?.dependencies?.external_systems?.length > 0 },
-    { title: `${nums.apis} APIs`, id: "ch2-apis", indent: 1, show: doc?.dependencies?.apis?.length > 0 },
+    { title: `${nums.documents} Documents`, id: "ch2-docs", indent: 1, show: documents.length > 0 },
+    { title: `${nums.cfg} Configuration Files`, id: "ch2-cfg", indent: 1, show: configFiles.length > 0 },
+    { title: `${nums.env} Environment Variables`, id: "ch2-env", indent: 1, show: envVars.length > 0 },
+    { title: `${nums.params} Runtime Parameters`, id: "ch2-params", indent: 1, show: runtimeParams.length > 0 },
+    { title: `${nums.lang} Languages`, id: "ch2-lang", indent: 1, show: languages.length > 0 },
+    { title: `${nums.tools} Tools`, id: "ch2-tools", indent: 1, show: tools.length > 0 },
+    { title: `${nums.ext} External Systems`, id: "ch2-ext", indent: 1, show: externalSystems.length > 0 },
+    { title: `${nums.apis} APIs`, id: "ch2-apis", indent: 1, show: apis.length > 0 },
 
     { title: "3. TECHNICAL EXECUTION", id: "ch3-title", indent: 0, isHeader: true, show: true },
     { title: `${nums.exec_deploy} Execution & Deployment`, id: "ch3-exec-deploy", indent: 1, show: !!nums.exec_deploy },
@@ -323,21 +486,21 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
     { title: `${nums.diagram_desc} Workflow Description`, id: "ch3-diagram-desc", indent: 1, show: !!nums.diagram_desc },
     { title: `${nums.diagram_auto} Workflow Diagram`, id: "ch3-auto-flowchart", indent: 1, show: !!nums.diagram_auto },
     { title: `${nums.workflow} Workflow Steps`, id: "ch3-workflow-table", indent: 1, show: !!nums.workflow },
-    { title: `${nums.calc} Calculations`, id: "ch3-calc", indent: 1, show: doc?.technical?.calculations?.length > 0 },
-    { title: `${nums.error} Error Handling`, id: "ch3-error", indent: 1, show: doc?.technical?.error_handling?.length > 0 },
+    { title: `${nums.calc} Calculations`, id: "ch3-calc", indent: 1, show: calculations.length > 0 },
+    { title: `${nums.error} Error Handling`, id: "ch3-error", indent: 1, show: errorHandling.length > 0 },
 
     { title: "4. OUTPUTS & SECURITY", id: "ch4-title", indent: 0, isHeader: true, show: true },
-    { title: `${nums.gen_files} Generated Files`, id: "ch4-gen-files", indent: 1, show: doc?.outputs?.generated_files?.length > 0 },
-    { title: `${nums.notify} Notifications`, id: "ch4-notify", indent: 1, show: doc?.outputs?.notifications?.length > 0 },
-    { title: `${nums.reports} Reports`, id: "ch4-reports", indent: 1, show: doc?.outputs?.reports?.length > 0 },
-    { title: `${nums.cred} Credentials`, id: "ch4-cred", indent: 1, show: doc?.security?.credentials?.length > 0 },
-    { title: `${nums.sens} Sensitive Data`, id: "ch4-sens", indent: 1, show: doc?.security?.sensitive_data?.length > 0 },
-    { title: `${nums.sec_con} Security Considerations`, id: "ch4-sec-con", indent: 1, show: doc?.security?.security_considerations?.length > 0 },
-    { title: `${nums.gaps} Knowledge Gaps`, id: "ch4-gaps", indent: 1, show: doc?.knowledge_gaps?.length > 0 },
-    { title: `${nums.rec} Recommendations`, id: "ch4-rec", indent: 1, show: doc?.recommendations?.length > 0 },
+    { title: `${nums.gen_files} Generated Files`, id: "ch4-gen-files", indent: 1, show: generatedFiles.length > 0 },
+    { title: `${nums.notify} Notifications`, id: "ch4-notify", indent: 1, show: notifications.length > 0 },
+    { title: `${nums.reports} Reports`, id: "ch4-reports", indent: 1, show: reports.length > 0 },
+    { title: `${nums.cred} Credentials`, id: "ch4-cred", indent: 1, show: credentials.length > 0 },
+    { title: `${nums.sens} Sensitive Data`, id: "ch4-sens", indent: 1, show: sensitiveData.length > 0 },
+    { title: `${nums.sec_con} Security Considerations`, id: "ch4-sec-con", indent: 1, show: securityConsiderations.length > 0 },
+    { title: `${nums.gaps} Knowledge Gaps`, id: "ch4-gaps", indent: 1, show: knowledgeGaps.length > 0 },
+    { title: `${nums.rec} Recommendations`, id: "ch4-rec", indent: 1, show: recommendations.length > 0 },
 
-    { title: "5. EVIDENCE TESTING", id: "ch5-title", indent: 0, isHeader: true, show: doc?.evidence_testing?.length > 0 },
-    ...(doc?.evidence_testing || []).map((ev, idx) => ({
+    { title: "5. EVIDENCE TESTING", id: "ch5-title", indent: 0, isHeader: true, show: evidenceTesting.length > 0 },
+    ...evidenceTesting.map((ev, idx) => ({
       title: `5.${idx + 1}. ${ev.name || `Evidence #${idx + 1}`}`, id: `ch5-evidence-${idx}`, indent: 1, show: true
     })),
   ].filter(t => t.show);
@@ -432,11 +595,11 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
           </View>
           <View style={s.contactCardBody}>
             <Text style={{ fontWeight: "bold", fontSize: 8, color: C.gray900, marginBottom: 4 }}>{doc.meta?.contact?.company || doc.meta?.companyName || "Example Technology Indonesia"}</Text>
-            {doc.meta?.contact?.address ? <Text style={{ fontSize: 8, marginBottom: 2 }}>{doc.meta?.contact?.address}</Text> : null}
+            {doc.meta?.contact?.address ? <Text style={{ fontSize: 8, marginBottom: 2 }}>{doc.meta?.contact?.address}</Text> : false}
             <Text style={{ fontSize: 8, marginBottom: 2 }}>Phone: {doc.meta?.contact?.phone || ""}</Text>
-            {doc.meta?.contact?.fax ? <Text style={{ fontSize: 8, marginBottom: 2 }}>Fax: {doc.meta?.contact?.fax}</Text> : null}
-            {doc.meta?.contact?.email ? <Text style={{ fontSize: 8, marginBottom: 2 }}>E-mail: {doc.meta?.contact?.email}</Text> : null}
-            {doc.meta?.contact?.website ? <Text style={{ fontSize: 8, marginBottom: 2 }}>Website: {doc.meta?.contact?.website}</Text> : null}
+            {doc.meta?.contact?.fax ? <Text style={{ fontSize: 8, marginBottom: 2 }}>Fax: {doc.meta?.contact?.fax}</Text> : false}
+            {doc.meta?.contact?.email ? <Text style={{ fontSize: 8, marginBottom: 2 }}>E-mail: {doc.meta?.contact?.email}</Text> : false}
+            {doc.meta?.contact?.website ? <Text style={{ fontSize: 8, marginBottom: 2 }}>Website: {doc.meta?.contact?.website}</Text> : false}
           </View>
         </View>
       </Page>
@@ -558,13 +721,13 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
           </View>
         )}
 
-        {doc.business?.sop_steps?.length > 0 && (
+        {sopSteps.length > 0 && (
           <View style={s.sectionWrap}>
              <SubmenuTitle id="ch1-sop" pageMapObj={pageMap} minPresenceAhead={250}>{nums?.sop_mapping || "1.3."} SOP STEPS</SubmenuTitle>
              <PDFTable
                headers={[{ label: "Step" }, { label: "Name" }, { label: "Implemented" }, { label: "Notes" }]}
                colWidths={["15%", "30%", "20%", "35%"]}
-               rows={doc.business.sop_steps.map((r, i) => [
+               rows={sopSteps.map((r, i) => [
                  r.step || String(i+1),
                  r.name,
                  r.implemented ? "Yes" : "No",
@@ -574,31 +737,31 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
           </View>
         )}
 
-        {doc.business?.business_process?.length > 0 && (
+        {businessProcess.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch1-process" pageMapObj={pageMap}>{nums?.process || "1.4."} BUSINESS PROCESS</SubmenuTitle>
-            <BulletList items={doc.business.business_process} />
+            <BulletList items={businessProcess} />
           </View>
         )}
 
-        {doc.business?.business_rules?.length > 0 && (
+        {businessRules.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch1-rules" pageMapObj={pageMap}>{nums?.rules || "1.5."} BUSINESS RULES</SubmenuTitle>
-            <BulletList items={doc.business.business_rules} />
+            <BulletList items={businessRules} />
           </View>
         )}
 
-        {doc.business?.assumptions?.length > 0 && (
+        {assumptions.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch1-assumptions" pageMapObj={pageMap}>{nums?.assumptions || "1.6."} ASSUMPTIONS</SubmenuTitle>
-            <BulletList items={doc.business.assumptions} />
+            <BulletList items={assumptions} />
           </View>
         )}
 
-        {doc.business?.limitations?.length > 0 && (
+        {limitations.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch1-limitations" pageMapObj={pageMap}>{nums?.limitations || "1.7."} LIMITATIONS</SubmenuTitle>
-            <BulletList items={doc.business.limitations} />
+            <BulletList items={limitations} />
           </View>
         )}
       </Page>
@@ -609,24 +772,24 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
         <PDFFooter doc={doc} />
         <ChapterTitle id="ch2-title" pageMapObj={pageMap}>2. INPUTS & DEPENDENCIES</ChapterTitle>
 
-        {doc.inputs?.documents?.length > 0 && (
+        {documents.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch2-docs" pageMapObj={pageMap}>{nums?.documents || "2.1."} DOCUMENTS</SubmenuTitle>
-            <BulletList items={doc.inputs.documents} />
+            <BulletList items={documents} />
           </View>
         )}
 
-        {doc.inputs?.configuration_files?.length > 0 && (
+        {configFiles.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch2-cfg" pageMapObj={pageMap}>{nums?.cfg || "2.2."} CONFIGURATION FILES</SubmenuTitle>
-            <BulletList items={doc.inputs.configuration_files} />
+            <BulletList items={configFiles} />
           </View>
         )}
 
-        {doc.inputs?.environment_variables?.length > 0 && (
+        {envVars.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch2-env" pageMapObj={pageMap}>{nums?.env || "2.3."} ENVIRONMENT VARIABLES</SubmenuTitle>
-            <BulletList items={doc.inputs.environment_variables} />
+            <BulletList items={envVars} />
           </View>
         )}
 
@@ -645,7 +808,7 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
                   if (typeof f === 'string') {
                     try { const p = JSON.parse(f); if (typeof p === 'object' && p !== null) obj = p; } catch (e) { obj = { name: f, description: "" }; }
                   }
-                  return [obj?.name || JSON.stringify(obj), obj?.description || ""];
+                  return [obj?.name || (typeof obj === 'object' ? JSON.stringify(obj) : String(obj)), obj?.description || ""];
                 })}
               />
             ) : (
@@ -654,31 +817,31 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
           </View>
         )}
 
-        {doc.dependencies?.languages?.length > 0 && (
+        {languages.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch2-lang" pageMapObj={pageMap}>{nums?.lang || "2.5."} LANGUAGES</SubmenuTitle>
-            <BulletList items={doc.dependencies.languages} />
+            <BulletList items={languages} />
           </View>
         )}
 
-        {doc.dependencies?.tools?.length > 0 && (
+        {tools.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch2-tools" pageMapObj={pageMap}>{nums?.tools || "2.6."} TOOLS</SubmenuTitle>
-            <BulletList items={doc.dependencies.tools} />
+            <BulletList items={tools} />
           </View>
         )}
 
-        {doc.dependencies?.external_systems?.length > 0 && (
+        {externalSystems.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch2-ext" pageMapObj={pageMap}>{nums?.ext || "2.7."} EXTERNAL SYSTEMS</SubmenuTitle>
-            <BulletList items={doc.dependencies.external_systems} />
+            <BulletList items={externalSystems} />
           </View>
         )}
 
-        {doc.dependencies?.apis?.length > 0 && (
+        {apis.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch2-apis" pageMapObj={pageMap}>{nums?.apis || "2.8."} APIS</SubmenuTitle>
-            <BulletList items={doc.dependencies.apis} />
+            <BulletList items={apis} />
           </View>
         )}
       </Page>
@@ -743,48 +906,48 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
                   <SubmenuTitle id="ch3-diagram-desc" pageMapObj={pageMap}>{nums?.diagram_desc || "3.1."} WORKFLOW DESCRIPTION</SubmenuTitle>
                   <Text style={s.bodyText}>{manualDiagram}</Text>
                 </View>
-              ) : null}
+              ) : false}
               
-              {isMermaid ? renderDiagramBlock() : null}
+              {isMermaid ? renderDiagramBlock() : false}
               
               {isInlineFlow ? renderAutoDiagramBlock(
                 manualDiagram.split(/(?:->|-->|\u2192)/).map((p, i) => ({ step: i+1, name: p.trim() })).filter(s => s.name),
                 nums?.diagram,
                 "ch3-diagram"
-              ) : null}
+              ) : false}
 
-              {!isMermaid && !isInlineFlow && doc.technical?.workflow?.length > 0 ? renderAutoDiagramBlock(
-                doc.technical.workflow,
+              {!isMermaid && !isInlineFlow && workflowSteps.length > 0 ? renderAutoDiagramBlock(
+                workflowSteps,
                 nums?.diagram_auto
-              ) : null}
+              ) : false}
             </>
           );
         })()}
 
-        {doc.technical?.workflow?.length > 0 && (
+        {workflowSteps.length > 0 && (
           <View style={s.sectionWrap}>
              <SubmenuTitle id="ch3-workflow-table" pageMapObj={pageMap} minPresenceAhead={250}>{nums?.workflow || "3.2."} WORKFLOW STEPS</SubmenuTitle>
              <PDFTable
                headers={[{ label: "Step", align: "center" }, { label: "Name" }, { label: "Description" }]}
                colWidths={["15%", "30%", "55%"]}
-               rows={doc.technical.workflow.map((w, i) => [
+               rows={workflowSteps.map((w, i) => [
                  w.step || String(i+1), w.name, w.description || ""
                ])}
              />
           </View>
         )}
 
-        {doc.technical?.calculations?.length > 0 && (
+        {calculations.length > 0 && (
           <View style={s.sectionWrap}>
              <SubmenuTitle id="ch3-calc" pageMapObj={pageMap}>{nums?.calc || "3.3."} CALCULATIONS</SubmenuTitle>
-             <BulletList items={doc.technical.calculations} />
+             <BulletList items={calculations} />
           </View>
         )}
 
-        {doc.technical?.error_handling?.length > 0 && (
+        {errorHandling.length > 0 && (
           <View style={s.sectionWrap}>
              <SubmenuTitle id="ch3-error" pageMapObj={pageMap}>{nums?.error || "3.4."} ERROR HANDLING</SubmenuTitle>
-             <BulletList items={doc.technical.error_handling} />
+             <BulletList items={errorHandling} />
           </View>
         )}
       </Page>
@@ -795,81 +958,81 @@ const ExportTemplatePDF = ({ doc, pageMap = {}, diagramImage }) => {
         <PDFFooter doc={doc} />
         <ChapterTitle id="ch4-title" pageMapObj={pageMap}>4. OUTPUTS & SECURITY</ChapterTitle>
 
-        {doc.outputs?.generated_files?.length > 0 && (
+        {generatedFiles.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch4-gen-files" pageMapObj={pageMap}>{nums?.gen_files || "4.1."} GENERATED FILES</SubmenuTitle>
-            <BulletList items={doc.outputs.generated_files} />
+            <BulletList items={generatedFiles} />
           </View>
         )}
 
-        {doc.outputs?.notifications?.length > 0 && (
+        {notifications.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch4-notify" pageMapObj={pageMap}>{nums?.notify || "4.2."} NOTIFICATIONS</SubmenuTitle>
-            <BulletList items={doc.outputs.notifications} />
+            <BulletList items={notifications} />
           </View>
         )}
 
-        {doc.outputs?.reports?.length > 0 && (
+        {reports.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch4-reports" pageMapObj={pageMap}>{nums?.reports || "4.3."} REPORTS</SubmenuTitle>
-            <BulletList items={doc.outputs.reports} />
+            <BulletList items={reports} />
           </View>
         )}
 
-        {doc.security?.credentials?.length > 0 && (
+        {credentials.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch4-cred" pageMapObj={pageMap}>{nums?.cred || "4.4."} CREDENTIALS</SubmenuTitle>
-            <BulletList items={doc.security.credentials} />
+            <BulletList items={credentials} />
           </View>
         )}
 
-        {doc.security?.sensitive_data?.length > 0 && (
+        {sensitiveData.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch4-sens" pageMapObj={pageMap}>{nums?.sens || "4.5."} SENSITIVE DATA</SubmenuTitle>
-            <BulletList items={doc.security.sensitive_data} />
+            <BulletList items={sensitiveData} />
           </View>
         )}
 
-        {doc.security?.security_considerations?.length > 0 && (
+        {securityConsiderations.length > 0 && (
           <View style={s.sectionWrap}>
             <SubmenuTitle id="ch4-sec-con" pageMapObj={pageMap}>{nums?.sec_con || "4.6."} SECURITY CONSIDERATIONS</SubmenuTitle>
-            <BulletList items={doc.security.security_considerations} />
+            <BulletList items={securityConsiderations} />
           </View>
         )}
 
-        {doc.knowledge_gaps?.length > 0 && (
+        {knowledgeGaps.length > 0 && (
            <View style={s.sectionWrap}>
              <SubmenuTitle id="ch4-gaps" pageMapObj={pageMap}>{nums?.gaps || "4.7."} KNOWLEDGE GAPS</SubmenuTitle>
-             <BulletList items={doc.knowledge_gaps} />
+             <BulletList items={knowledgeGaps} />
            </View>
         )}
 
-        {doc.recommendations?.length > 0 && (
+        {recommendations.length > 0 && (
            <View style={s.sectionWrap}>
              <SubmenuTitle id="ch4-rec" pageMapObj={pageMap}>{nums?.rec || "4.8."} RECOMMENDATIONS</SubmenuTitle>
-             <BulletList items={doc.recommendations} />
+             <BulletList items={recommendations} />
            </View>
         )}
       </Page>
 
       {/* ── CHAPTER 5: EVIDENCE TESTING ── */}
-      {doc.evidence_testing && doc.evidence_testing.length > 0 && (
+      {evidenceTesting.length > 0 && (
         <Page size="A4" style={s.page} wrap>
           <PDFHeader doc={doc} />
           <PDFFooter doc={doc} />
           <ChapterTitle id="ch5-title" pageMapObj={pageMap}>5. EVIDENCE TESTING</ChapterTitle>
 
-          {doc.evidence_testing.map((ev, idx) => (
+          {evidenceTesting.map((ev, idx) => (
             <View key={idx} style={s.sectionWrap} wrap={false}>
-              <SubmenuTitle id={`ch5-evidence-${idx}`} pageMapObj={pageMap}>5.{idx + 1}. {(ev.name || `EVIDENCE #${idx + 1}`).toUpperCase()}</SubmenuTitle>
-              {ev.image ? (
+              <SubmenuTitle id={`ch5-evidence-${idx}`} pageMapObj={pageMap}>5.{idx + 1}. {(ev?.name || `EVIDENCE #${idx + 1}`).toUpperCase()}</SubmenuTitle>
+              {ev?.image ? (
                 <View style={{ marginTop: 10, alignItems: "center", borderWidth: 1, borderColor: "#d1d5db", borderRadius: 4, padding: 10, backgroundColor: "#f9fafb" }}>
                   <Image src={ev.image} style={{ width: "100%", maxHeight: 500, objectFit: "contain" }} />
                 </View>
-              ) : null}
-              {ev.info ? (
+              ) : false}
+              {ev?.info ? (
                 <Text style={[s.bodyText, { marginTop: 8 }]}>{ev.info}</Text>
-              ) : null}
+              ) : false}
             </View>
           ))}
         </Page>
