@@ -46,7 +46,10 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#0a0a0a] flex flex-col md:flex-row text-zinc-300 font-sans">
       <aside className="w-full md:w-[280px] bg-[#0d0d0d] border-r border-zinc-800 p-8 flex flex-col shrink-0 h-auto md:h-screen">
         <div className="flex flex-col h-full">
-          <h1 className="text-2xl font-serif italic text-white tracking-tighter mb-8" style={{ fontFamily: "Georgia, serif" }}>WORKFORCE</h1>
+          <h1 className="text-2xl font-serif italic text-white tracking-tighter mb-8 flex items-center gap-3" style={{ fontFamily: "Georgia, serif" }}>
+            <img src="/logo.png" alt="WORKFORCE" className="w-8 h-8 object-contain drop-shadow-[0_0_8px_rgba(59,130,246,0.3)]" />
+            WORKFORCE
+          </h1>
 
           <Link
             to="/entry/new"
@@ -59,6 +62,26 @@ export default function Dashboard() {
           <nav className="flex-1 space-y-8">
             <div>
               <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-600 mb-4 font-bold">Menu</div>
+              <ul className="space-y-2">
+                <li>
+                  <Link
+                    to="/dashboard"
+                    className="flex items-center gap-3 text-sm font-semibold text-zinc-400 hover:text-white transition-colors py-2"
+                  >
+                    <Book className="w-4 h-4" />
+                    Dashboard
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to="/goals"
+                    className="flex items-center gap-3 text-sm font-semibold text-zinc-400 hover:text-white transition-colors py-2"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    Goals
+                  </Link>
+                </li>
+              </ul>
             </div>
           </nav>
 

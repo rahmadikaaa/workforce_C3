@@ -11,20 +11,20 @@ export default function JournalEntry() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [loading, setLoading] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const isNew = id === "new";
   const entryId = React.useMemo(() => isNew ? crypto.randomUUID() : (id as string), [id, isNew]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!user) return;
-    
+
     if (isNew) {
       setInitialLoad(false);
       setMessages([{
@@ -38,7 +38,7 @@ export default function JournalEntry() {
       try {
         const docRef = doc(db, "users", user.uid, "entries", entryId);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
           const data = docSnap.data() as Entry;
           setMessages(data.messages || []);
@@ -64,7 +64,7 @@ export default function JournalEntry() {
 
   const saveEntry = async (newMessages: Message[]) => {
     if (!user) return;
-    
+
     // Generate a simple title based on the first user message if it's new
     let title = "New Reflection";
     const firstUserMsg = newMessages.find(m => m.role === "user");
@@ -75,15 +75,15 @@ export default function JournalEntry() {
     // Try to get a summary if we have some messages
     let summary = "Reflection in progress...";
     if (newMessages.length >= 3) {
-       // Just a simple heuristic, the real app might ask the LLM for a summary
-       const modelMsgs = newMessages.filter(m => m.role === "model");
-       if (modelMsgs.length > 0) {
-         summary = modelMsgs[modelMsgs.length - 1].text.slice(0, 100) + "...";
-       }
+      // Just a simple heuristic, the real app might ask the LLM for a summary
+      const modelMsgs = newMessages.filter(m => m.role === "model");
+      if (modelMsgs.length > 0) {
+        summary = modelMsgs[modelMsgs.length - 1].text.slice(0, 100) + "...";
+      }
     }
 
     const entryRef = doc(db, "users", user.uid, "entries", entryId);
-    
+
     const payload = JSON.parse(JSON.stringify({
       id: entryId,
       userId: user.uid,
@@ -116,7 +116,7 @@ export default function JournalEntry() {
 
     try {
       const token = await user.getIdToken(/* forceRefresh */ true);
-      
+
       const apiMessages = newMessages.map(m => ({
         role: m.role,
         parts: [{ text: m.text }]
@@ -142,13 +142,13 @@ export default function JournalEntry() {
       }
 
       const data = await res.json();
-      
+
       const modelMessage: Message = { role: "model", text: data.text };
       const updatedMessages = [...newMessages, modelMessage];
-      
+
       setMessages(updatedMessages);
       await saveEntry(updatedMessages);
-      
+
     } catch (err) {
       console.error(err);
       setError("Failed to get response from AI. Please try again.");
@@ -170,7 +170,7 @@ export default function JournalEntry() {
     <div className="flex flex-col h-screen w-full bg-[#0a0a0a] text-zinc-300 font-sans overflow-hidden">
       <header className="h-20 border-b border-zinc-800/50 flex items-center justify-between px-6 md:px-10 bg-[#0a0a0a]/80 backdrop-blur-xl z-20 shrink-0">
         <div className="flex items-center space-x-4">
-          <button 
+          <button
             onClick={() => navigate("/dashboard")}
             className="p-2 hover:bg-zinc-800 rounded-full transition-colors"
           >
@@ -210,7 +210,7 @@ export default function JournalEntry() {
                   <div className="w-6 h-6 rounded bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
                     <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full shadow-[0_0_8px_rgba(129,140,248,0.5)]"></div>
                   </div>
-                  <span className="text-[10px] uppercase tracking-[0.25em] text-indigo-400 font-black">Aura Reflection</span>
+                  <span className="text-[10px] uppercase tracking-[0.25em] text-indigo-400 font-black">Workforce</span>
                 </div>
                 <p className="text-base leading-relaxed text-zinc-400 whitespace-pre-wrap">
                   {msg.text}
@@ -218,7 +218,7 @@ export default function JournalEntry() {
               </div>
             )
           ))}
-          
+
           {loading && (
             <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-zinc-800/50 relative overflow-hidden w-full max-w-[200px]">
               <div className="flex items-center space-x-2">
@@ -228,7 +228,7 @@ export default function JournalEntry() {
               </div>
             </div>
           )}
-          
+
           {error && (
             <div className="text-center p-4 bg-red-900/20 border border-red-900/50 text-red-400 rounded-[2rem] text-sm">
               {error}
@@ -239,7 +239,7 @@ export default function JournalEntry() {
 
       <footer className="p-4 md:p-10 pt-0 z-30 bg-[#0a0a0a]">
         <div className="max-w-2xl mx-auto">
-          <form 
+          <form
             onSubmit={(e) => { e.preventDefault(); handleSend(); }}
             className="relative group"
           >

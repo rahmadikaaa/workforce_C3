@@ -10,6 +10,7 @@ import Landing from "./components/Landing";
 import Dashboard from "./components/Dashboard";
 import JournalEntry from "./components/JournalEntry";
 import AnalysisWorkspace from "./components/AnalysisWorkspace";
+import Goals from "./components/Goals";
 
 export default function App() {
   return (
@@ -38,6 +39,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <AnalysisWorkspace />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/goals" 
+            element={
+              <ProtectedRoute>
+                <Goals />
               </ProtectedRoute>
             } 
           />

@@ -723,9 +723,10 @@ export default function AnalysisWorkspace() {
           >
             <ArrowLeft className="w-5 h-5 text-zinc-400" aria-hidden="true" />
           </button>
-          <div>
+          <div className="flex items-center">
             <span className="text-sm font-bold text-white tracking-wide">Analysis Workspace</span>
-            <span className="hidden md:inline ml-3 text-[10px] uppercase tracking-[0.2em] text-zinc-600 font-bold">
+            <span className="hidden md:flex items-center ml-3 text-[10px] uppercase tracking-[0.2em] text-zinc-600 font-bold gap-2">
+              <img src="/logo.png" alt="WORKFORCE" className="w-4 h-4 object-contain" />
               WORKFORCE
             </span>
           </div>
