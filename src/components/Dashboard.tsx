@@ -4,7 +4,7 @@ import { db, logout } from "../lib/firebase";
 import { collection, query, orderBy, getDocs } from "firebase/firestore";
 import { Entry } from "../types";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Book, LogOut, ArrowRight } from "lucide-react";
+import { Plus, Book, ArrowRight } from "lucide-react";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -102,7 +102,61 @@ export default function Dashboard() {
       </aside>
 
       <main className="flex-1 flex flex-col bg-[#0a0a0a] relative p-6 md:p-10 overflow-y-auto">
-        <h1 className="text-2xl font-serif italic text-white mb-8" style={{ fontFamily: "Georgia, serif" }}>Your History</h1>
+        {/* Main Hero */}
+        <div className="bg-zinc-900/30 p-8 md:p-10 rounded-[2rem] border border-zinc-800/60 relative overflow-hidden mb-8">
+          <div className="text-[10px] uppercase tracking-[0.25em] text-zinc-500 font-bold mb-3 flex items-center gap-2">
+            <img src="/logo.png" alt="WORKFORCE" className="w-4 h-4 object-contain" />
+            WORKFORCE
+          </div>
+          <h1 className="text-2xl md:text-4xl font-serif italic text-white tracking-tight leading-snug mb-4" style={{ fontFamily: "Georgia, serif" }}>
+            Analyze your SOP and automation.<br className="hidden sm:inline" /> Find the gaps.<br className="hidden sm:inline" /> Generate the documentation.
+          </h1>
+          <p className="text-sm md:text-base text-zinc-400 max-w-2xl leading-relaxed mb-6">
+            WORKFORCE uses Gemini to reconcile operational intent with actual automation behavior, surface implementation gaps, and generate structured technical documentation.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-zinc-400 mb-8 py-2 px-3.5 bg-zinc-950/60 rounded-xl border border-zinc-800/80 w-fit">
+            <span className="text-zinc-300 font-medium">SOP + Script</span>
+            <span className="text-zinc-600">→</span>
+            <span className="text-zinc-300 font-medium">AI Analysis</span>
+            <span className="text-zinc-600">→</span>
+            <span className="text-zinc-300 font-medium">Findings</span>
+            <span className="text-zinc-600">→</span>
+            <span className="text-zinc-300 font-medium">PDF</span>
+          </div>
+
+          <div>
+            <Link
+              to="/analyze"
+              className="inline-flex items-center justify-center gap-2 bg-white text-black py-3 px-6 rounded-xl text-sm font-semibold tracking-wide hover:bg-zinc-200 transition-colors shadow-lg shadow-white/5"
+            >
+              Analyze Automation <ArrowRight className="w-4 h-4 ml-1" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Secondary Journal Action */}
+        <div className="bg-zinc-900/20 p-6 md:p-8 rounded-[1.5rem] border border-zinc-800/40 mb-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-serif italic text-white mb-1" style={{ fontFamily: "Georgia, serif" }}>
+              Personal Gemini Journal
+            </h2>
+            <p className="text-sm text-zinc-400">
+              Reflect, brainstorm, and work through ideas securely with Gemini.
+            </p>
+          </div>
+          <Link
+            to="/entry/new"
+            className="inline-flex items-center gap-2 py-2.5 px-5 border border-zinc-800 rounded-xl text-xs font-semibold tracking-wider text-zinc-300 uppercase hover:bg-zinc-800 hover:text-white transition-colors shrink-0 self-start sm:self-center"
+          >
+            Start Reflection <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {/* Recent Activity */}
+        <h2 className="text-2xl font-serif italic text-white mb-6" style={{ fontFamily: "Georgia, serif" }}>
+          Recent Activity
+        </h2>
 
         {loading ? (
           <div className="animate-pulse space-y-4">
