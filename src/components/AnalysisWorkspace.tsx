@@ -421,7 +421,7 @@ function SourceArtifactField({
           label=""
           value={pasteText}
           onChange={onPaste}
-          placeholder={kind === "sop" ? "Paste SOP content here…" : "Paste executable source code here…"}
+          placeholder={kind === "sop" ? "Paste SOP text manually… (overrides uploaded file content)" : "Paste executable source code here…"}
           rows={kind === "sop" ? 10 : 14}
           required={required && !file}
         />
@@ -465,7 +465,8 @@ export default function AnalysisWorkspace() {
 
   // Source artifacts — file upload (primary) + text paste (fallback)
   const [sopFile, setSopFile] = useState<File | null>(null);
-  const [sopPasteText, setSopPasteText] = useState("");
+  const [sopPasteText, setSopPasteText] = useState("");       // manual textarea input
+  const [sopExtractedText, setSopExtractedText] = useState(""); // internally extracted from PDF/DOCX — never shown in textarea
   const [bashFile, setBashFile] = useState<File | null>(null);
   const [bashPasteText, setBashPasteText] = useState("");
 
@@ -482,7 +483,7 @@ export default function AnalysisWorkspace() {
   const [pdfError, setPdfError] = useState<string | null>(null);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
-  const hasSop = sopFile !== null || sopPasteText.trim() !== "";
+  const hasSop = sopFile !== null || sopPasteText.trim() !== "" || sopExtractedText.trim() !== "";
   const hasBash = bashFile !== null || bashPasteText.trim() !== "";
 
   const updateContext = (field: keyof ActivityContext) => (value: string) => {
@@ -499,17 +500,18 @@ export default function AnalysisWorkspace() {
     setSopExtractState("idle");
 
     if (!f) {
-      // User cleared the file
+      // User cleared the file — also clear internally extracted text
+      setSopExtractedText("");
       return;
     }
 
     const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
 
     if (ext === ".txt" || ext === ".md") {
-      // Client-side text read — no network call needed
+      // Client-side text read — store internally, don't populate textarea
       try {
         const text = await f.text();
-        setSopPasteText(text);
+        setSopExtractedText(text);
       } catch {
         setSopExtractState({ error: "Could not read the file. Please paste the SOP content manually." });
       }
@@ -545,7 +547,8 @@ export default function AnalysisWorkspace() {
         return;
       }
 
-      setSopPasteText(data.text);
+      // Store extracted text internally — do NOT populate the visible textarea
+      setSopExtractedText(data.text);
       setSopExtractState("idle");
     } catch {
       setSopExtractState({
@@ -580,12 +583,11 @@ export default function AnalysisWorkspace() {
       }
 
       // ── 2. Resolve sopContent ─────────────────────────────────────────────
-      // For PDF/DOCX: handleSopFile already extracted text into sopPasteText.
-      // For txt/md:   handleSopFile already read text into sopPasteText.
-      // For any file type that slipped through without extraction, fall back
-      // to file.text() as a last resort (plain-text readable files only).
-      let sopContent = sopPasteText;
-      if (!sopContent.trim() && sopFile) {
+      // Priority: manual textarea text > internally extracted text > raw file read.
+      // Manual text (sopPasteText) takes precedence when explicitly provided.
+      // Extracted text (sopExtractedText) is the normal path for PDF/DOCX uploads.
+      let sopContent = sopPasteText.trim() || sopExtractedText.trim();
+      if (!sopContent && sopFile) {
         try {
           sopContent = await sopFile.text();
         } catch {
@@ -831,6 +833,13 @@ export default function AnalysisWorkspace() {
                   >
                     <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 mt-0.5" aria-hidden="true" />
                     <span>{sopExtractState.error}</span>
+                  </div>
+                )}
+                {/* Confirmation badge — shown after successful extraction */}
+                {sopFile && sopExtractedText.trim() !== "" && sopExtractState === "idle" && (
+                  <div className="flex items-center gap-2 text-xs text-emerald-400 mt-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                    <span>SOP content extracted and ready for analysis.</span>
                   </div>
                 )}
               </div>
