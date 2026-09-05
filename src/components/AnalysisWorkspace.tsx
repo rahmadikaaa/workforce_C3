@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { auth, db } from "../lib/firebase";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
@@ -391,11 +391,7 @@ function SourceArtifactField({
   onPaste,
   required,
 }: SourceArtifactFieldProps) {
-  // Auto-reveal textarea when pasteText is populated externally (e.g. after extraction)
-  const [showPaste, setShowPaste] = useState(() => pasteText.trim() !== "");
-  useEffect(() => {
-    if (pasteText.trim() !== "") setShowPaste(true);
-  }, [pasteText]);
+  const [showPaste, setShowPaste] = useState(false);
 
   const spec = ACCEPT_SPECS[kind];
   const fallbackLabel = spec.label.split(" / ")[0];
