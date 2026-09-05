@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { auth } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -477,6 +478,7 @@ export default function AnalysisWorkspace() {
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -641,6 +643,22 @@ export default function AnalysisWorkspace() {
       }
 
       setAnalysisResult(data.analysisJson);
+
+      // ── Persist to Firestore ─────────────────────────────────────────────
+      // Non-fatal: analysis is available in memory regardless of Firestore outcome.
+      try {
+        const docRef = await addDoc(collection(db, "analyses"), {
+          userId: currentUser.uid,
+          activityName: activityContext.activity_name,
+          analysisJson: data.analysisJson,
+          revision: 1,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        setSavedAnalysisId(docRef.id);
+      } catch (firestoreError) {
+        console.error("Firestore save failed:", firestoreError);
+      }
     } catch {
       // Do not log or expose request content
       setAnalysisError("A network error occurred. Please check your connection and try again.");
