@@ -3,7 +3,6 @@ import { auth } from "../lib/firebase";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
-  ChevronDown,
   ChevronRight,
   Download,
   FileText,
@@ -66,6 +65,149 @@ const EMPTY_CONTEXT: ActivityContext = {
   scheduler: "",
 };
 
+// ── Structured value renderer ──────────────────────────────────────────────────
+
+/**
+ * Checks whether a value is "effectively empty" — null, undefined,
+ * empty string, empty array, or an object whose every leaf is empty.
+ */
+function isEffectivelyEmpty(v: unknown): boolean {
+  if (v === undefined || v === null || v === "") return true;
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === "object") return Object.keys(v as Record<string, unknown>).length === 0;
+  return false;
+}
+
+/**
+ * Formats a raw JSON key (e.g. "knowledge_gaps") into a human-readable label
+ * ("Knowledge Gaps").
+ */
+function formatKey(key: string): string {
+  return key
+    .split(/[_\s]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/**
+ * Recursively renders any JSON value (object, array, primitive) as
+ * a readable, structured UI. This avoids showing raw JSON or [object Object].
+ */
+function StructuredValue({ data, depth = 0 }: { data: unknown; depth?: number }) {
+  if (data === null || data === undefined) {
+    return <span className="text-zinc-600 italic">—</span>;
+  }
+
+  if (typeof data === "boolean") {
+    return (
+      <span className={data ? "text-emerald-400" : "text-red-400"}>
+        {data ? "Yes" : "No"}
+      </span>
+    );
+  }
+
+  if (typeof data === "number") {
+    return <span className="text-amber-300">{data}</span>;
+  }
+
+  if (typeof data === "string") {
+    if (data.trim() === "") return <span className="text-zinc-600 italic">—</span>;
+    // Render multi-line strings in a pre block
+    if (data.includes("\n")) {
+      return (
+        <pre className="text-xs text-zinc-300 whitespace-pre-wrap break-words font-mono leading-relaxed bg-zinc-900/40 rounded-lg px-3 py-2 mt-1">
+          {data}
+        </pre>
+      );
+    }
+    return <span className="text-zinc-300">{data}</span>;
+  }
+
+  if (Array.isArray(data)) {
+    if (data.length === 0) {
+      return <span className="text-zinc-600 italic">No items</span>;
+    }
+
+    // Array of primitives (strings/numbers) → compact list
+    const allPrimitive = data.every(
+      (item) => typeof item === "string" || typeof item === "number" || typeof item === "boolean"
+    );
+    if (allPrimitive) {
+      return (
+        <ul className="space-y-1 mt-1">
+          {data.map((item, i) => (
+            <li key={i} className="flex items-start gap-2 text-xs">
+              <span className="text-zinc-700 shrink-0 mt-px">•</span>
+              <StructuredValue data={item} depth={depth + 1} />
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    // Array of objects → numbered cards
+    return (
+      <div className="space-y-2 mt-1">
+        {data.map((item, i) => (
+          <div
+            key={i}
+            className="border border-zinc-800/60 rounded-lg bg-zinc-900/30 px-3 py-2"
+          >
+            <div className="text-[10px] uppercase tracking-widest text-zinc-600 font-bold mb-1">
+              Item {i + 1}
+            </div>
+            <StructuredValue data={item} depth={depth + 1} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (typeof data === "object") {
+    const entries = Object.entries(data as Record<string, unknown>);
+    if (entries.length === 0) {
+      return <span className="text-zinc-600 italic">No data</span>;
+    }
+
+    return (
+      <div className={clsx("space-y-2", depth > 0 && "mt-1")}>
+        {entries.map(([key, val]) => {
+          const isNested =
+            (typeof val === "object" && val !== null && !Array.isArray(val) && Object.keys(val as Record<string, unknown>).length > 0) ||
+            (Array.isArray(val) && val.length > 0);
+
+          return (
+            <div key={key}>
+              <div className="flex items-start gap-2 text-xs">
+                <span className="text-zinc-500 font-semibold shrink-0 min-w-[120px]">
+                  {formatKey(key)}
+                </span>
+                {!isNested && (
+                  <div className="text-zinc-300 break-words min-w-0">
+                    <StructuredValue data={val} depth={depth + 1} />
+                  </div>
+                )}
+              </div>
+              {isNested && (
+                <div className="ml-4 pl-3 border-l border-zinc-800/50 mt-1">
+                  <StructuredValue data={val} depth={depth + 1} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Fallback for any unexpected type
+  return (
+    <pre className="text-xs text-zinc-300 whitespace-pre-wrap break-words font-mono">
+      {String(data)}
+    </pre>
+  );
+}
+
 // ── SectionPanel ───────────────────────────────────────────────────────────────
 
 interface SectionPanelProps {
@@ -74,12 +216,39 @@ interface SectionPanelProps {
   label: string;
   description: string;
   value: unknown;
+  onSave?: (newValue: unknown) => void;
 }
 
-function SectionPanel({ sectionId, label, description, value }: SectionPanelProps) {
+function SectionPanel({ sectionId, label, description, value, onSave }: SectionPanelProps) {
   const [open, setOpen] = useState(false);
-  const isEmpty = value === undefined || value === null;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editString, setEditString] = useState("");
+  const [editError, setEditError] = useState("");
+
+  const isEmpty = isEffectivelyEmpty(value);
   const headingId = `section-heading-${sectionId}`;
+
+  const startEdit = () => {
+    setIsEditing(true);
+    setEditString(JSON.stringify(value ?? {}, null, 2));
+    setEditError("");
+  };
+
+  const handleSave = () => {
+    try {
+      const parsed = JSON.parse(editString);
+      onSave?.(parsed);
+      setIsEditing(false);
+      setEditError("");
+    } catch (err) {
+      setEditError("Invalid JSON format. Please ensure all quotes and brackets match.");
+    }
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditError("");
+  };
 
   return (
     <div className="border border-zinc-800 rounded-xl overflow-hidden">
@@ -88,7 +257,9 @@ function SectionPanel({ sectionId, label, description, value }: SectionPanelProp
         id={`section-btn-${sectionId}`}
         aria-expanded={open}
         aria-controls={`section-body-${sectionId}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (!isEditing) setOpen((v) => !v);
+        }}
         className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-zinc-900/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-zinc-600"
       >
         <div className="flex items-center gap-3">
@@ -104,11 +275,13 @@ function SectionPanel({ sectionId, label, description, value }: SectionPanelProp
           </span>
           <span className="hidden sm:inline text-xs text-zinc-500">{description}</span>
         </div>
-        {open ? (
-          <ChevronDown className="w-4 h-4 text-zinc-500 shrink-0" aria-hidden="true" />
-        ) : (
-          <ChevronRight className="w-4 h-4 text-zinc-500 shrink-0" aria-hidden="true" />
-        )}
+        <ChevronRight
+          className={clsx(
+            "w-4 h-4 text-zinc-500 shrink-0 transition-transform duration-200",
+            open && "rotate-90"
+          )}
+          aria-hidden="true"
+        />
       </button>
 
       {open && (
@@ -118,14 +291,52 @@ function SectionPanel({ sectionId, label, description, value }: SectionPanelProp
           aria-labelledby={headingId}
           className="px-5 py-4 border-t border-zinc-800 bg-zinc-950/60"
         >
-          {isEmpty ? (
-            <p className="text-xs text-zinc-600 italic">
-              No analysis data yet. Run an analysis to populate this section.
-            </p>
+          {isEditing ? (
+            <div className="space-y-3">
+              <textarea
+                value={editString}
+                onChange={(e) => setEditString(e.target.value)}
+                className="w-full bg-zinc-900/80 border border-zinc-700 rounded-lg p-3 text-xs text-zinc-300 font-mono focus:outline-none focus:border-zinc-500 min-h-[200px] resize-y"
+              />
+              {editError && <p className="text-red-400 text-xs">{editError}</p>}
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
           ) : (
-            <pre className="text-xs text-zinc-300 whitespace-pre-wrap break-words font-mono leading-relaxed">
-              {JSON.stringify(value, null, 2)}
-            </pre>
+            <div>
+              <div className="flex justify-end mb-2">
+                {onSave && (
+                  <button
+                    type="button"
+                    onClick={startEdit}
+                    className="text-xs px-2.5 py-1 rounded bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors border border-zinc-800"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+              {isEmpty ? (
+                <p className="text-xs text-zinc-600 italic">
+                  No analysis data available for this section.
+                </p>
+              ) : (
+                <StructuredValue data={value} />
+              )}
+            </div>
           )}
         </div>
       )}
@@ -457,7 +668,15 @@ function SectionHeading({ id, title, subtitle, required }: SectionHeadingProps) 
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function AnalysisWorkspace() {
+interface AnalysisWorkspaceProps {
+  analysisResult?: AnalysisResult | null;
+  analysisJson?: AnalysisResult | null;
+}
+
+export default function AnalysisWorkspace({
+  analysisResult: propResult,
+  analysisJson: propJson,
+}: AnalysisWorkspaceProps = {}) {
   const navigate = useNavigate();
 
   // ── Form state ──────────────────────────────────────────────────────────────
@@ -476,7 +695,18 @@ export default function AnalysisWorkspace() {
   >("idle");
 
   // ── UI state ────────────────────────────────────────────────────────────────
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
+    propResult ?? propJson ?? null
+  );
+
+  useEffect(() => {
+    if (propResult !== undefined) {
+      setAnalysisResult(propResult);
+    } else if (propJson !== undefined) {
+      setAnalysisResult(propJson);
+    }
+  }, [propResult, propJson]);
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -709,6 +939,28 @@ export default function AnalysisWorkspace() {
     } finally {
       setIsGeneratingPdf(false);
     }
+  };
+
+  const handleSectionSave = (sectionId: string, newValue: unknown) => {
+    setAnalysisResult((prev) => {
+      if (!prev) return prev;
+      const raw = prev as Record<string, unknown>;
+      // If it's nested under analysisJson
+      if (raw.analysisJson) {
+        return {
+          ...raw,
+          analysisJson: {
+            ...(raw.analysisJson as Record<string, unknown>),
+            [sectionId]: newValue,
+          },
+        } as unknown as AnalysisResult;
+      }
+      // If it's flat
+      return {
+        ...raw,
+        [sectionId]: newValue,
+      } as unknown as AnalysisResult;
+    });
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -1028,16 +1280,25 @@ export default function AnalysisWorkspace() {
 
           {/* 11 section shells rendered unconditionally — empty state shown until analysis runs */}
           <div role="region" aria-label="Analysis result sections" className="space-y-2">
-            {ANALYSIS_SECTIONS.map(({ id, label, description }) => (
-              <div key={id}>
-                <SectionPanel
-                  sectionId={id}
-                  label={label}
-                  description={description}
-                  value={analysisResult ? (analysisResult as Record<string, unknown>)[id] : undefined}
-                />
-              </div>
-            ))}
+            {ANALYSIS_SECTIONS.map(({ id, label, description }) => {
+              const raw = analysisResult as Record<string, unknown> | null;
+              const source = (raw?.analysisJson as Record<string, unknown> | undefined) ?? raw;
+              const sectionData = source
+                ? (source[id] ?? (id === "knowledge_gaps" ? source["knowledgeGaps"] : undefined))
+                : undefined;
+
+              return (
+                <div key={id}>
+                  <SectionPanel
+                    sectionId={id}
+                    label={label}
+                    description={description}
+                    value={sectionData}
+                    onSave={(newVal) => handleSectionSave(id, newVal)}
+                  />
+                </div>
+              );
+            })}
           </div>
         </section>
       </main>
