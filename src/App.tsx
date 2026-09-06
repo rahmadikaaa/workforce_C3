@@ -43,6 +43,14 @@ export default function App() {
             } 
           />
           <Route 
+            path="/analyze/:id" 
+            element={
+              <ProtectedRoute>
+                <AnalysisWorkspace />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
             path="/goals" 
             element={
               <ProtectedRoute>
