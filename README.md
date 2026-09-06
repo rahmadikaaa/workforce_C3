@@ -2,260 +2,120 @@
 
 > **Understand the SOP. Find the automation gaps. Generate the documentation.**
 
-WORKFORCE is an authenticated AI application that uses Gemini to reconcile operational intent from Standard Operating Procedures (SOPs) with actual automation behavior, identify implementation gaps, preserve analysis results, and generate structured technical documentation.
+WORKFORCE is an authenticated, Gemini-powered application that reconciles the operational intent documented in Standard Operating Procedures (SOPs) with the actual behavior of automation scripts. It identifies implementation gaps, preserves structured analysis, and turns the findings into reusable technical documentation.
 
 Built for the **Google Cloud Run AI Challenge**.
 
----
-
-## The Problem
+## Why WORKFORCE?
 
 Automation changes quickly. Documentation often does not.
 
-Scripts are patched, workflows evolve, and production behavior changes over time, while SOPs and technical documentation may still describe an older version of how the automation is supposed to work.
-
-This creates a simple but important question:
+Scripts are patched, workflows evolve, and production behavior changes while SOPs and technical documents may continue to describe an older process. This creates an important operational question:
 
 > **Does the automation running today still represent what the documentation says it should do?**
 
-WORKFORCE was built to help answer that question.
+WORKFORCE helps answer that question by creating a reconciliation layer between **operational intent** and **automation reality**.
 
----
+## Core Workflow
 
-## What WORKFORCE Does
-
-WORKFORCE creates a reconciliation layer between **operational intent** and **automation reality**.
-
-Instead of simply generating documentation from a prompt, WORKFORCE first analyzes the SOP and automation implementation together, identifies differences between them, preserves the structured result, and turns that analysis into reusable technical documentation.
-
-### Core Flow
-
-```text
-SOP + Automation Script
-          ↓
-     Gemini Analysis
-          ↓
- Reconciliation & Findings
-          ↓
-   Firestore Persistence
-          ↓
- Technical Documentation
-          ↓
-          PDF
+```mermaid
+flowchart TD
+    A["SOP + Automation Script"] --> B["Gemini Analysis"]
+    B --> C["Reconciliation & Findings"]
+    C --> D["Firestore Persistence"]
+    D --> E["Technical Documentation"]
+    E --> F["PDF Export"]
 ```
 
----
+### 1. Understand and Reconcile
 
-## Workflow 1 — Understand & Reconcile
-
-Users provide two sources of information:
-
-- an operational SOP
-- the corresponding automation script or automation lifecycle
-
-Gemini analyzes both sides to understand:
+Users provide an operational SOP and its corresponding automation script or lifecycle. Gemini analyzes both sources to identify:
 
 - intended operational workflow
 - actual automation behavior
 - commands and actions
 - normal and abnormal conditions
-- dependencies
-- scheduling context
+- dependencies and scheduling context
 - technical and operational impact
 - discrepancies between documentation and implementation
 
-The objective is not only to explain the script, but to compare:
+The result is a structured comparison of **what should happen according to the SOP** and **what the automation actually does**.
 
-> **What should happen according to the SOP?**
+### 2. Preserve and Revisit
 
-with:
+Completed analyses are stored in Firestore rather than disappearing after a single AI response. Authenticated users can return to the dashboard, review previous analyses, and reopen saved work.
 
-> **What does the automation actually do?**
+Each record is scoped to the authenticated Firebase user, turning Gemini output into a persistent working artifact.
 
-This reconciliation workflow is the core capability of WORKFORCE.
+### 3. Generate Documentation
 
-```text
-SOP
- +
-Automation Script
-        ↓
-      Gemini
-        ↓
-Structured Reconciliation
-        ↓
-Findings / Gaps / Workflow
-```
+WORKFORCE transforms validated findings into structured technical documentation that can include:
 
----
-
-## Workflow 2 — Preserve & Revisit
-
-A useful AI analysis should not disappear after a single generation.
-
-After an analysis is completed, WORKFORCE stores the structured result in Firestore.
-
-Authenticated users can return to their dashboard, review previous analyses, and reopen saved work.
-
-```text
-Analysis Result
-      ↓
-   Firestore
-      ↓
-Saved Analyses
-      ↓
-    Reopen
-```
-
-This turns Gemini output into a persistent working artifact rather than a one-time prompt response.
-
-Firestore records are scoped to the authenticated Firebase user.
-
----
-
-## Workflow 3 — Generate Documentation
-
-Once the automation has been analyzed and reconciled, WORKFORCE can transform the structured findings into technical documentation.
-
-The generated document can include:
-
-- automation context
-- workflow information
-- technical behavior
-- findings
+- automation context and purpose
+- workflow and technical behavior
+- reconciliation findings and gaps
 - operational considerations
-- structured documentation sections
+- reusable documentation sections
 
-The result can then be exported as PDF.
+The generated document can then be exported as a PDF.
 
-```text
-Validated Analysis
-        ↓
-Structured Documentation
-        ↓
-       PDF
-```
+## Key Features
 
-This closes the loop between understanding automation and maintaining technical knowledge.
-
----
-
-## Demo Inputs
-
-To make WORKFORCE easy to review without exposing confidential operational information, the repository includes **sanitized demo artifacts**.
-
-All identifiers, infrastructure values, addresses, names, paths, and operational references in these demo files are synthetic or sanitized.
-
-### Sample SOP
-
-- [Sanitized Service Restart SOP](./REPLACE_WITH_PATH/restart_service_sop_sanitized.pdf)
-
-### Sample Automation Scripts
-
-- [Alert Detection Script](./REPLACE_WITH_PATH/alert_check_demo.sh)
-- [Health Check Script](./REPLACE_WITH_PATH/health_check_demo.sh)
-- [Restart & Recovery Script](./REPLACE_WITH_PATH/restart_demo.sh)
-
-The Bash files together represent a simplified automation lifecycle:
-
-```text
-Alert Detection
-      ↓
-Health Check
-      ↓
-Restart / Recovery
-      ↓
-Recovery Verification
-```
-
-These artifacts can be used as safe inputs when reviewing the WORKFORCE analysis workflow.
-
-> Replace `REPLACE_WITH_PATH` with the actual repository folder containing the demo files.
-
----
-
-## Multi-Turn Gemini Interaction
-
-WORKFORCE also includes an authenticated multi-turn Gemini experience.
-
-A user can establish context in one message and continue with a subsequent request without repeating the entire subject.
-
-Example:
-
-```text
-User:
-I'm preparing technical documentation for a service restart automation.
-The automation is used when a service experiences an issue and needs
-to be restored.
-
-User:
-Without repeating everything, summarize the purpose of the automation
-I mentioned earlier in two sentences.
-```
-
-Gemini can retain and use the context established in the earlier turn.
-
-This provides conversational continuity in addition to the main WORKFORCE analysis workflow.
-
----
+| Capability | Description |
+| --- | --- |
+| SOP understanding | Extracts the intended operational process and requirements. |
+| Script analysis | Interprets the implemented automation behavior. |
+| Reconciliation | Compares documented intent with actual implementation. |
+| Gap identification | Highlights missing, different, or potentially outdated behavior. |
+| Persistent analysis | Stores results in Firestore for later review. |
+| Multi-turn interaction | Retains conversational context across follow-up requests. |
+| Documentation generation | Converts structured findings into reusable technical documentation. |
+| PDF export | Produces a portable document for review and distribution. |
 
 ## Architecture
 
-```text
-User
-  ↓
-React Frontend
-  ↓
-Firebase Authentication
-  ↓
-WORKFORCE Application
-  ↓
-Google Cloud Run
-  ├── Gemini API
-  │      ↑
-  │ Google Cloud Secret Manager
-  │
-  └── Firestore
-         ↓
-    User-isolated
-    analysis data
+```mermaid
+flowchart TD
+    U["User"] --> FE["React Frontend"]
+    FE --> AUTH["Firebase Authentication"]
+    AUTH --> APP["WORKFORCE on Cloud Run"]
+    APP --> GEMINI["Gemini API"]
+    APP --> DB["Firestore"]
+    SM["Secret Manager"] --> APP
+    DB --> DATA["User-isolated Analysis Data"]
 ```
 
----
+## Multi-Turn Gemini Interaction
 
-## Google AI Studio & Gemini
+In addition to the main reconciliation workflow, WORKFORCE provides an authenticated multi-turn Gemini experience. A user can establish context and continue with follow-up requests without repeating the full subject.
 
-Google AI Studio was used during development to guide Gemini-powered application behavior and define security-focused development instructions.
+```text
+User: I'm preparing technical documentation for a service restart
+      automation used when a service experiences an issue.
 
-Gemini provides the AI capabilities used for:
+User: Without repeating everything, summarize the purpose of the
+      automation I mentioned earlier in two sentences.
+```
 
-- SOP understanding
-- automation script analysis
-- reconciliation
-- structured findings
-- documentation assistance
-- multi-turn conversational interaction
+Gemini retains the relevant context from the earlier turn and uses it to answer the follow-up request.
 
-The WORKFORCE workflow extends beyond the starter journal experience by applying Gemini to a custom SOP-to-automation reconciliation use case.
+## Security by Design
 
----
+Operational documents and automation artifacts may contain sensitive information, so WORKFORCE applies security controls across identity, data, and credential boundaries.
 
-## Firebase Authentication
+| Control | Implementation |
+| --- | --- |
+| Authentication | Firebase Authentication establishes user identity. |
+| User isolation | Firestore Security Rules restrict records using the authenticated Firebase UID. |
+| Credential management | The Gemini API key is stored in Google Cloud Secret Manager. |
+| Server-side secret access | Cloud Run retrieves the Gemini credential through a secret reference. |
+| Prompt-injection awareness | Security-focused AI Studio instructions treat uploaded content as untrusted input. |
+| Cross-user leakage prevention | Database-level ownership rules prevent access to another user's analyses. |
+| Repository hygiene | Secrets and local `.env` files are excluded from the public repository. |
 
-WORKFORCE uses **Firebase Authentication** to establish user identity before protected application functionality is accessed.
+### Firestore Ownership Boundary
 
-Authenticated identity is also used as the ownership boundary for persistent Firestore analysis records.
-
----
-
-## Firestore Persistence & User Isolation
-
-Firestore stores persistent WORKFORCE analysis results.
-
-Analysis documents include the authenticated Firebase UID.
-
-Firestore Security Rules enforce ownership at the database layer.
-
-Example:
+Analysis documents include the authenticated Firebase UID. Firestore Security Rules enforce ownership at the database layer rather than relying only on frontend filtering.
 
 ```javascript
 match /analyses/{analysisId} {
@@ -267,78 +127,63 @@ match /analyses/{analysisId} {
 }
 ```
 
-This means an authenticated user can only create analysis records for their own UID and can only read analysis records belonging to that UID.
+### Secret Management
 
-User isolation therefore does not rely only on frontend filtering.
+The production Gemini credential is injected into Cloud Run from Google Cloud Secret Manager instead of being stored in client-side code or committed configuration.
 
----
-
-## Google Cloud Secret Manager
-
-The production Gemini API credential is stored in **Google Cloud Secret Manager**.
-
-Cloud Run retrieves the credential using a secret reference instead of storing the Gemini API key as a plaintext environment variable.
-
-Production configuration:
-
-```text
-GEMINI_API_KEY
+```yaml
+GEMINI_API_KEY:
   valueFrom:
     secretKeyRef:
       key: latest
       name: gemini-api-key
 ```
 
-This keeps the Gemini credential out of the client-side application and production source configuration.
+Google AI Studio was also used during development to define security-focused guidance covering threat modeling, secure coding, prompt injection, data leakage, privilege escalation, and secret handling.
 
----
+## Demo Assets
 
-## Security
+The repository includes sanitized artifacts so the workflow can be reviewed without exposing confidential operational information. All identifiers, infrastructure values, addresses, names, paths, and operational references in these files are synthetic or sanitized.
 
-Security was treated as a core application requirement because operational documentation and automation artifacts may contain sensitive information.
+### Sample SOP
 
-WORKFORCE applies several security controls:
+- [Sanitized Service Restart SOP](./public/demo-assets/restart_service_sop_sanitized%20%281%29.pdf)
 
-- **Authentication** — Firebase Authentication establishes user identity.
-- **User Isolation** — Firestore Security Rules restrict analysis access using the authenticated Firebase UID.
-- **Credential Management** — Gemini API credentials are stored in Google Cloud Secret Manager.
-- **Server-Side Secret Access** — Cloud Run retrieves the Gemini credential through a Secret Manager reference.
-- **Threat Modeling Guidance** — Google AI Studio development instructions include security-focused guidance.
-- **Prompt Injection Awareness** — AI Studio instructions consider untrusted input and prompt-injection risks.
-- **Cross-User Leakage Prevention** — Firestore access boundaries prevent analysis records from being shared across users.
-- **Secret Handling** — application secrets are not intended to be committed to the public repository.
+### Sample Automation Scripts
 
-Google AI Studio security instructions also cover areas such as:
+- [Alert Detection Script](./public/demo-assets/alert_check_link.sh)
+- [Health Check Script](./public/demo-assets/health_check_link.sh)
+- [Restart and Recovery Script](./public/demo-assets/restart_link.sh)
 
-- threat modeling
-- secure coding
-- prompt injection
-- cross-user data leakage
-- privilege escalation
-- secret handling
-- authentication and authorization boundaries
+Together, the scripts represent this simplified lifecycle:
 
----
-
-## Cloud Run Deployment
-
-The production WORKFORCE application is deployed on **Google Cloud Run**.
-
-Cloud Run provides the public production runtime for the authenticated application and Gemini-powered backend.
-
-The challenge deployment label is configured as:
-
-```text
-dev-tutorial=cloud-run-ai-challenge
+```mermaid
+flowchart LR
+    A["Alert Detection"] --> B["Health Check"]
+    B --> C["Restart / Recovery"]
+    C --> D["Recovery Verification"]
 ```
 
-### Live Application
+## Technology Stack
 
-[Launch WORKFORCE on Cloud Run](https://reflect-ai-candidate-620658281668.europe-west1.run.app)
-
----
+| Area | Technology |
+| --- | --- |
+| AI development | Google AI Studio |
+| Generative AI | Gemini API |
+| Frontend | React |
+| Authentication | Firebase Authentication |
+| Database | Firestore |
+| Secret management | Google Cloud Secret Manager |
+| Production runtime | Google Cloud Run |
+| Documentation output | PDF generation |
 
 ## Run Locally
+
+### Prerequisites
+
+- Node.js and npm
+- Firebase project configuration
+- Gemini API credentials for local development
 
 ### 1. Clone the repository
 
@@ -353,124 +198,53 @@ cd workforce_C3
 npm install
 ```
 
-### 3. Configure local environment
+### 3. Configure the environment
 
-Use `.env.example` as a reference for the environment variables required by the application.
+Copy the example configuration and add the required local Firebase and Gemini development values.
 
 ```bash
 cp .env.example .env
 ```
 
-Configure the required local Firebase and Gemini development values.
+> Local development may use environment variables. The production Cloud Run deployment retrieves the Gemini API credential from Google Cloud Secret Manager.
 
-> Local development may use environment variables. The production Cloud Run deployment retrieves the Gemini API credential through Google Cloud Secret Manager.
+Never commit `.env` files containing credentials.
 
-Do not commit `.env` files containing credentials.
-
-### 4. Start development
+### 4. Start the development server
 
 ```bash
 npm run dev
 ```
 
-### 5. Build
+### 5. Create a production build
 
 ```bash
 npm run build
 ```
 
----
+## Deployment
 
-## Technology Stack
-
-| Area | Technology |
-| --- | --- |
-| AI Development | Google AI Studio |
-| Generative AI | Gemini API |
-| Production Runtime | Google Cloud Run |
-| Authentication | Firebase Authentication |
-| Database | Firestore |
-| Secret Management | Google Cloud Secret Manager |
-| Frontend | React |
-| Documentation Output | PDF generation |
-
----
-
-## Challenge Evaluation
-
-### Authenticity
-
-WORKFORCE introduces a custom SOP-to-automation reconciliation workflow.
-
-Instead of only generating AI responses, it compares documented operational intent with actual automation behavior and identifies potential gaps between the two.
-
-### Usability
-
-The application provides a connected workflow:
+The production application is deployed on Google Cloud Run with the challenge label:
 
 ```text
-Provide Inputs
-    ↓
-Analyze
-    ↓
-Review Findings
-    ↓
-Save Analysis
-    ↓
-Reopen
-    ↓
-Generate Documentation
+dev-tutorial=cloud-run-ai-challenge
 ```
 
-This allows users to move from operational inputs to reusable documentation through one application experience.
+- **Live application:** [Launch WORKFORCE](https://reflect-ai-candidate-620658281668.europe-west1.run.app)
+- **Source code:** [github.com/rahmadikaaa/workforce_C3](https://github.com/rahmadikaaa/workforce_C3)
 
-### Stability
+## Challenge Highlights
 
-The authenticated end-to-end workflow is deployed on Google Cloud Run and uses Firestore for persistent analysis storage.
-
-The production workflow covers:
-
-- authentication
-- Gemini analysis
-- persistence
-- retrieval
-- document generation
-
-### Security
-
-WORKFORCE uses:
-
-- Firebase Authentication
-- user-isolated Firestore Security Rules
-- Google Cloud Secret Manager
-- server-side Gemini credential access
-- security-focused Google AI Studio instructions
-
-These controls establish boundaries around user identity, persistent data, and application credentials.
-
----
-
-## Production Links
-
-### Live Application
-
-[https://reflect-ai-candidate-620658281668.europe-west1.run.app](https://reflect-ai-candidate-620658281668.europe-west1.run.app)
-
-### Source Code
-
-[https://github.com/rahmadikaaa/workforce_C3](https://github.com/rahmadikaaa/workforce_C3)
-
-### Demo / Walkthrough
-
-[WORKFORCE — Closing the Gap Between Operational Documentation and Automation Reality](REPLACE_WITH_LINKEDIN_ARTICLE_URL)
-
----
+| Criterion | WORKFORCE Approach |
+| --- | --- |
+| Authenticity | Applies Gemini to a custom SOP-to-automation reconciliation use case rather than simple response generation. |
+| Usability | Connects input, analysis, findings, persistence, retrieval, documentation, and export in one workflow. |
+| Stability | Provides an authenticated end-to-end application on Cloud Run with persistent Firestore storage. |
+| Security | Establishes explicit boundaries for user identity, stored analyses, and application credentials. |
 
 ## The Bigger Idea
 
-Automation will continue to evolve faster than static documentation.
-
-WORKFORCE explores how Gemini can become a reconciliation layer between **operational intent** and **automation reality** — helping teams understand what is running, identify what has changed, preserve the findings, and turn those findings back into useful technical documentation.
+Automation will continue to evolve faster than static documentation. WORKFORCE explores how Gemini can become a reconciliation layer between **operational intent** and **automation reality**—helping teams understand what is running, identify what changed, preserve the findings, and turn those findings back into useful technical documentation.
 
 > **Understand the SOP. Find the automation gaps. Generate the documentation.**
 
