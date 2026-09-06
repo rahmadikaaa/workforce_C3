@@ -346,7 +346,19 @@ const PDFTable = ({ headers, rows, colWidths }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const ExportTemplatePDF = ({ doc = {}, pageMap = {}, diagramImage }) => {
-  const workflowSteps = normalizeWorkflow(doc?.technical?.workflow);
+  let workflowSteps = normalizeWorkflow(doc?.technical?.workflow);
+  const isGenericWorkflow = workflowSteps.length > 0 && workflowSteps.every(w => /^Step \d+$/i.test(w.name.trim()));
+  if (isGenericWorkflow || workflowSteps.length === 0) {
+    let fallbackSteps = [];
+    if (doc?.business?.sop_steps && Array.isArray(doc.business.sop_steps) && doc.business.sop_steps.length > 0) {
+      fallbackSteps = normalizeWorkflow(doc.business.sop_steps);
+    } else if (doc?.business?.business_process && Array.isArray(doc.business.business_process) && doc.business.business_process.length > 0) {
+      fallbackSteps = normalizeWorkflow(doc.business.business_process);
+    }
+    if (fallbackSteps.length > 0 && fallbackSteps.some(w => !/^Step \d+$/i.test(w.name.trim()))) {
+      workflowSteps = fallbackSteps;
+    }
+  }
   const calculations = normalizeList(doc?.technical?.calculations);
   const errorHandling = normalizeList(doc?.technical?.error_handling);
   const generatedFiles = normalizeList(doc?.outputs?.generated_files);
