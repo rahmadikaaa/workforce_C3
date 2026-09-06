@@ -1,79 +1,53 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "./AuthContext";
-import { logout } from "../lib/firebase";
+import { db, logout } from "../lib/firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Book, ArrowRight, Sparkles } from "lucide-react";
+import { Plus, Book, ArrowRight, Sparkles, Loader2 } from "lucide-react";
 
-// ── Documentation Workspace ─────────────────────────────────────────────────
-// Temporary demo data representing the WORKFORCE documentation lifecycle.
-// Replace with persisted AnalysisSession records from Firestore.
-// ─────────────────────────────────────────────────────────────────────────────
-
-type DocStatus = "needs-analysis" | "ready" | "generated";
-
-interface DocItem {
+interface SavedAnalysis {
   id: string;
-  name: string;
-  category: string;
-  description: string;
-  status: DocStatus;
-  findings: number | null;
-  analysisComplete: boolean;
-  documentationComplete: boolean;
-  updatedAt: string;
+  activityName: string;
+  revision: number;
+  createdAt: Date;
 }
-
-const DEMO_DOC_ITEMS: DocItem[] = [
-  {
-    id: "demo-1",
-    name: "Check Log UMB QRIS via AION",
-    category: "Transaction Monitoring · AION",
-    description: "SOP and automation successfully analyzed. 3 implementation gaps identified.",
-    status: "generated",
-    findings: 3,
-    analysisComplete: true,
-    documentationComplete: true,
-    updatedAt: "Aug 28, 2026",
-  },
-  {
-    id: "demo-2",
-    name: "Infrastructure Health Check",
-    category: "Infrastructure Operations",
-    description: "Analysis completed. 5 implementation gaps identified. Structured analysis is ready for documentation.",
-    status: "ready",
-    findings: 5,
-    analysisComplete: true,
-    documentationComplete: false,
-    updatedAt: "Aug 25, 2026",
-  },
-  {
-    id: "demo-3",
-    name: "PostgreSQL Health Check",
-    category: "Database Operations",
-    description: "SOP and automation have been registered but analysis has not been started.",
-    status: "needs-analysis",
-    findings: null,
-    analysisComplete: false,
-    documentationComplete: false,
-    updatedAt: "Aug 20, 2026",
-  },
-];
-
-const FILTER_TABS: { key: "all" | DocStatus; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "needs-analysis", label: "Needs Analysis" },
-  { key: "ready", label: "Ready to Generate" },
-  { key: "generated", label: "Generated" },
-];
 
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [activeFilter, setActiveFilter] = useState<"all" | DocStatus>("all");
+  const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredDocs = activeFilter === "all"
-    ? DEMO_DOC_ITEMS
-    : DEMO_DOC_ITEMS.filter(d => d.status === activeFilter);
+  useEffect(() => {
+    if (!user) return;
+    const fetchAnalyses = async () => {
+      try {
+        const q = query(collection(db, "analyses"), where("userId", "==", user.uid));
+        const querySnapshot = await getDocs(q);
+        const fetchedDocs: SavedAnalysis[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          fetchedDocs.push({
+            id: doc.id,
+            activityName: data.activityName || "Unnamed Activity",
+            revision: data.revision || 1,
+            createdAt: data.createdAt ? data.createdAt.toDate() : new Date(),
+          });
+        });
+        
+        fetchedDocs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        setAnalyses(fetchedDocs);
+      } catch (err) {
+        console.error("Failed to fetch analyses:", err);
+        setError("Failed to load saved analyses.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnalyses();
+  }, [user]);
 
   const handleLogout = async () => {
     await logout();
@@ -185,34 +159,25 @@ export default function Dashboard() {
 
         {/* Documentation Workspace */}
         <h2 className="text-2xl font-serif italic text-white mb-5" style={{ fontFamily: "Georgia, serif" }}>
-          Documentation Workspace
+          Saved Analyses
         </h2>
 
-        {/* Filter Tabs */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          {FILTER_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveFilter(tab.key)}
-              className={`text-[10px] uppercase tracking-widest font-bold py-2 px-4 rounded-lg border transition-colors ${
-                activeFilter === tab.key
-                  ? "bg-zinc-800 text-white border-zinc-700"
-                  : "text-zinc-500 border-zinc-800/60 hover:text-zinc-300 hover:border-zinc-700"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
         {/* Documentation Items */}
-        {filteredDocs.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center py-10">
+            <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
+          </div>
+        ) : error ? (
+          <div className="text-center py-10 text-red-400 bg-red-950/20 rounded-xl border border-red-900/50">
+            {error}
+          </div>
+        ) : analyses.length === 0 ? (
           <div className="text-center py-16 bg-zinc-900/30 rounded-[1.5rem] border border-zinc-800/50">
             <h3 className="text-lg font-serif italic text-white mb-2" style={{ fontFamily: "Georgia, serif" }}>
-              No documentation yet.
+              No analyses yet.
             </h3>
             <p className="text-sm text-zinc-400 mb-6 max-w-md mx-auto">
-              Analyze an SOP and its automation to generate your first technical documentation.
+              Analyze an SOP and its automation to generate your first structured analysis.
             </p>
             <Link
               to="/analyze"
@@ -223,65 +188,32 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid gap-3">
-            {filteredDocs.map((item) => (
+            {analyses.map((item) => (
               <div
                 key={item.id}
                 className="bg-zinc-900/30 p-5 md:p-6 rounded-[1.5rem] border border-zinc-800/50 hover:bg-zinc-900/50 transition-all"
               >
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6">
+                <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6 justify-between">
                   {/* Left: Name & Description */}
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-semibold text-white mb-0.5 truncate">
-                      {item.name}
+                      {item.activityName}
                     </h3>
                     <div className="text-[10px] uppercase tracking-widest text-zinc-600 font-bold mb-2">
-                      {item.category}
-                    </div>
-                    <p className="text-xs text-zinc-500 leading-relaxed line-clamp-2">
-                      {item.description}
-                    </p>
-                  </div>
-
-                  {/* Middle: Lifecycle Indicators */}
-                  <div className="flex items-center gap-5 shrink-0">
-                    <div className="text-center">
-                      <div className="text-[9px] uppercase tracking-widest text-zinc-600 font-bold mb-1">Analysis</div>
-                      <span className={`text-sm ${item.analysisComplete ? "text-zinc-300" : "text-zinc-600"}`}>
-                        {item.analysisComplete ? "✓" : "○"}
-                      </span>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[9px] uppercase tracking-widest text-zinc-600 font-bold mb-1">Findings</div>
-                      <span className={`text-sm font-mono ${item.findings !== null ? "text-zinc-300" : "text-zinc-600"}`}>
-                        {item.findings !== null ? item.findings : "—"}
-                      </span>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[9px] uppercase tracking-widest text-zinc-600 font-bold mb-1">Docs</div>
-                      <span className={`text-sm ${item.documentationComplete ? "text-zinc-300" : "text-zinc-600"}`}>
-                        {item.documentationComplete ? "✓" : "○"}
-                      </span>
+                      Revision {item.revision}
                     </div>
                   </div>
 
                   {/* Right: Date & CTA */}
                   <div className="flex items-center gap-4 shrink-0">
                     <span className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold hidden md:block whitespace-nowrap">
-                      {item.updatedAt}
+                      {item.createdAt.toLocaleDateString()}
                     </span>
                     <Link
-                      to="/analyze"
-                      className={`inline-flex items-center gap-1.5 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors shrink-0 whitespace-nowrap ${
-                        item.status === "ready"
-                          ? "bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
-                          : "border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600"
-                      }`}
+                      to={`/analyze/${item.id}`}
+                      className="inline-flex items-center gap-1.5 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors shrink-0 whitespace-nowrap bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
                     >
-                      {item.status === "generated"
-                        ? "View Docs"
-                        : item.status === "ready"
-                        ? "Generate Docs"
-                        : "Analyze"}
+                      View Data
                       <ArrowRight className="w-3 h-3" />
                     </Link>
                   </div>

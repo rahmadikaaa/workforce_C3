@@ -1,7 +1,7 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { auth, db } from "../lib/firebase";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { useNavigate } from "react-router-dom";
+import { addDoc, collection, serverTimestamp, doc, getDoc } from "firebase/firestore";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   ChevronDown,
@@ -456,6 +456,7 @@ function SectionHeading({ id, title, subtitle, required }: SectionHeadingProps) 
 
 export default function AnalysisWorkspace() {
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
 
   // ── Form state ──────────────────────────────────────────────────────────────
   const [activityContext, setActivityContext] = useState<ActivityContext>(EMPTY_CONTEXT);
@@ -479,6 +480,45 @@ export default function AnalysisWorkspace() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  const [savedLoadError, setSavedLoadError] = useState<string | null>(null);
+  const [savedMetadata, setSavedMetadata] = useState<{ revision?: number; createdAt?: string } | null>(null);
+
+  useEffect(() => {
+    if (!id || !auth.currentUser) return;
+    const fetchSavedAnalysis = async () => {
+      setIsLoadingSaved(true);
+      setSavedLoadError(null);
+      try {
+        const docRef = doc(db, "analyses", id);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+          setSavedLoadError("Analysis not found");
+          return;
+        }
+        const data = docSnap.data();
+        if (data.userId !== auth.currentUser.uid) {
+          setSavedLoadError("Analysis not found");
+          return;
+        }
+        setAnalysisResult(data.analysisJson);
+        if (data.activityName) {
+          setActivityContext(prev => ({ ...prev, activity_name: data.activityName }));
+        }
+        setSavedAnalysisId(docSnap.id);
+        setSavedMetadata({
+          revision: data.revision,
+          createdAt: data.createdAt ? data.createdAt.toDate().toLocaleDateString() : undefined
+        });
+      } catch (err) {
+        console.error("Failed to load saved analysis:", err);
+        setSavedLoadError("Failed to load saved analysis.");
+      } finally {
+        setIsLoadingSaved(false);
+      }
+    };
+    fetchSavedAnalysis();
+  }, [id]);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const hasSop = sopFile !== null || sopPasteText.trim() !== "" || sopExtractedText.trim() !== "";
@@ -642,6 +682,7 @@ export default function AnalysisWorkspace() {
 
       // ── Persist to Firestore ─────────────────────────────────────────────
       // Non-fatal: analysis is available in memory regardless of Firestore outcome.
+      console.log("[Firestore] START SAVE");
       try {
         const docRef = await addDoc(collection(db, "analyses"), {
           userId: currentUser.uid,
@@ -651,8 +692,10 @@ export default function AnalysisWorkspace() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        console.log("[Firestore] SAVED:", docRef.id);
         setSavedAnalysisId(docRef.id);
       } catch (firestoreError) {
+        console.error("[Firestore] FAILED:", firestoreError);
         console.error("Firestore save failed:", firestoreError);
       }
     } catch {
@@ -726,6 +769,39 @@ export default function AnalysisWorkspace() {
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
+  if (isLoadingSaved) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-6">
+        <div className="flex items-center gap-3 bg-zinc-900/60 border border-zinc-800 rounded-xl px-6 py-5">
+          <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
+          <p className="text-sm text-zinc-300 font-medium">Loading saved analysis…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (savedLoadError) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-zinc-900/30 border border-zinc-800 rounded-2xl p-8 text-center space-y-6">
+          <div className="w-12 h-12 bg-red-950/40 rounded-full flex items-center justify-center mx-auto border border-red-900/60">
+            <X className="w-6 h-6 text-red-500" />
+          </div>
+          <div>
+            <h2 className="text-xl font-serif italic text-white mb-2">{savedLoadError}</h2>
+            <p className="text-sm text-zinc-400">The requested analysis could not be found or you do not have permission to view it.</p>
+          </div>
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="w-full py-3 bg-white text-black font-semibold rounded-xl text-sm hover:bg-zinc-200 transition-colors"
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-zinc-300 font-sans">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
@@ -757,21 +833,24 @@ export default function AnalysisWorkspace() {
 
       <main className="max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-12 space-y-10">
         {/* ── Page title ────────────────────────────────────────────────────── */}
-        <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Automation Analysis</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Provide activity information, upload your source artifacts, and fill in the automation
-            context. The engine will produce an evidence-grounded structured analysis.
-          </p>
-        </div>
+        {!id && (
+          <div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Automation Analysis</h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Provide activity information, upload your source artifacts, and fill in the automation
+              context. The engine will produce an evidence-grounded structured analysis.
+            </p>
+          </div>
+        )}
 
         {/* ── Input form ────────────────────────────────────────────────────── */}
-        <form
-          id="analysis-form"
-          onSubmit={handleAnalyze}
-          aria-label="Automation analysis form"
-          className="space-y-10"
-        >
+        {!id && (
+          <form
+            id="analysis-form"
+            onSubmit={handleAnalyze}
+            aria-label="Automation analysis form"
+            className="space-y-10"
+          >
           {/* ── 1. Activity Information ──────────────────────────────────────── */}
           <section aria-labelledby="activity-info-heading">
             <SectionHeading
@@ -968,6 +1047,111 @@ export default function AnalysisWorkspace() {
             </div>
           </div>
         </form>
+        )}
+
+        {/* ── Read-only View (Saved Analysis Mode) ─────────────────────────── */}
+        {id && (
+          <div className="space-y-10">
+            <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-6 flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-serif italic text-white mb-1" style={{ fontFamily: "Georgia, serif" }}>
+                  {activityContext.activity_name || "Saved Analysis"}
+                </h1>
+                <p className="text-xs text-zinc-500">
+                  {savedMetadata?.createdAt ? `Created on ${savedMetadata.createdAt}` : "Saved analysis"}
+                  {savedMetadata?.revision ? ` · Revision ${savedMetadata.revision}` : ""}
+                </p>
+              </div>
+              <div className="text-[10px] uppercase tracking-widest text-emerald-500 font-bold flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" aria-hidden="true" />
+                Read Only
+              </div>
+            </div>
+
+            {(() => {
+              const typedResult = analysisResult as WorkforceAnalysisJson | null;
+              if (!typedResult) return null;
+
+              const rAppName = typedResult.metadata?.app_name;
+              const rActivityName = typedResult.metadata?.activity_name;
+              const rDocs = typedResult.inputs?.documents;
+              const rServerPath = typedResult.deployment?.server_path;
+              const rCommand = typedResult.execution?.command;
+              const rScheduler = typedResult.execution?.scheduler;
+
+              return (
+                <div className="space-y-10">
+                  {/* 1. Activity Information */}
+                  <section aria-labelledby="ro-activity-info">
+                    <SectionHeading
+                      id="ro-activity-info"
+                      title="1 · Activity Information"
+                      subtitle="Identity metadata for this automation activity."
+                    />
+                    <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">App Name</label>
+                        <div className="text-sm font-medium text-white">{rAppName || "—"}</div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">Activity Name</label>
+                        <div className="text-sm font-medium text-white">{rActivityName || "—"}</div>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* 2. Source / Evidence */}
+                  {rDocs && (Array.isArray(rDocs) ? rDocs.length > 0 : String(rDocs).trim() !== "") && (
+                    <section aria-labelledby="ro-source">
+                      <SectionHeading
+                        id="ro-source"
+                        title="2 · Source / Evidence"
+                        subtitle="Source artifacts processed during analysis."
+                      />
+                      <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-6">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">SOP Document Reference</label>
+                          <div className="text-sm font-medium text-white break-all">
+                            {Array.isArray(rDocs) ? rDocs.join(", ") : String(rDocs)}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
+                  {/* 3. Automation Context */}
+                  <section aria-labelledby="ro-context">
+                    <SectionHeading
+                      id="ro-context"
+                      title="3 · Automation Context"
+                      subtitle="Explicit metadata used for direct field mapping."
+                    />
+                    <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">SOP Confluence Link</label>
+                        <div className="text-sm font-medium text-white break-all">
+                          {Array.isArray(rDocs) ? rDocs[0] : (rDocs || "—")}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">Server / Automation Path</label>
+                        <div className="text-sm font-medium text-white break-all">{rServerPath || "—"}</div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">Command</label>
+                        <div className="text-sm font-medium text-white break-all">{rCommand || "—"}</div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">Scheduler</label>
+                        <div className="text-sm font-medium text-white break-all">{rScheduler || "—"}</div>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         {/* ── Analysis Result Workspace ──────────────────────────────────────── */}
         <section aria-labelledby="analysis-result-heading">
